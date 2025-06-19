@@ -70,16 +70,16 @@ const ExamResults: React.FC = () => {
     }
   ]);
 
-  const [filterCategory, setFilterCategory] = useState<string>('');
-  const [filterStatus, setFilterStatus] = useState<string>('');
+  const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
 
   const categories = ['消化内科', '肝胆外科', '心血管内科', '呼吸内科'];
 
   const filteredResults = results.filter(result => {
     return (
-      (!filterCategory || result.category === filterCategory) &&
-      (!filterStatus || result.status === filterStatus) &&
+      (filterCategory === 'all' || result.category === filterCategory) &&
+      (filterStatus === 'all' || result.status === filterStatus) &&
       (!searchTerm || 
         result.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         result.studentId.includes(searchTerm)
@@ -196,7 +196,7 @@ const ExamResults: React.FC = () => {
               <SelectValue placeholder="筛选科室" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">全部科室</SelectItem>
+              <SelectItem value="all">全部科室</SelectItem>
               {categories.map(cat => (
                 <SelectItem key={cat} value={cat}>{cat}</SelectItem>
               ))}
@@ -208,19 +208,19 @@ const ExamResults: React.FC = () => {
               <SelectValue placeholder="状态" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">全部状态</SelectItem>
+              <SelectItem value="all">全部状态</SelectItem>
               <SelectItem value="completed">已完成</SelectItem>
               <SelectItem value="in-progress">进行中</SelectItem>
               <SelectItem value="timeout">超时</SelectItem>
             </SelectContent>
           </Select>
           
-          {(filterCategory || filterStatus || searchTerm) && (
+          {(filterCategory !== 'all' || filterStatus !== 'all' || searchTerm) && (
             <Button 
               variant="outline" 
               onClick={() => {
-                setFilterCategory('');
-                setFilterStatus('');
+                setFilterCategory('all');
+                setFilterStatus('all');
                 setSearchTerm('');
               }}
             >
