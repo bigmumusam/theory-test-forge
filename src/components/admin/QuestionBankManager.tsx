@@ -51,7 +51,7 @@ const QuestionBankManager: React.FC = () => {
     },
   ]);
 
-  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [newQuestion, setNewQuestion] = useState<Partial<Question>>({
     type: 'choice',
     content: '',
@@ -169,9 +169,9 @@ const QuestionBankManager: React.FC = () => {
     }
   };
 
-  const filteredQuestions = selectedCategory 
-    ? questions.filter(q => q.category === selectedCategory)
-    : questions;
+  const filteredQuestions = selectedCategory === 'all' 
+    ? questions 
+    : questions.filter(q => q.category === selectedCategory);
 
   const getDifficultyText = (difficulty: string) => {
     switch (difficulty) {
@@ -393,14 +393,14 @@ const QuestionBankManager: React.FC = () => {
                     <SelectValue placeholder="选择科室筛选" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">全部科室</SelectItem>
+                    <SelectItem value="all">全部科室</SelectItem>
                     {categories.map(cat => (
                       <SelectItem key={cat.id} value={cat.name}>{cat.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {selectedCategory && (
-                  <Button variant="outline" onClick={() => setSelectedCategory('')}>
+                {selectedCategory !== 'all' && (
+                  <Button variant="outline" onClick={() => setSelectedCategory('all')}>
                     清除筛选
                   </Button>
                 )}
@@ -413,7 +413,7 @@ const QuestionBankManager: React.FC = () => {
             {filteredQuestions.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-gray-500 text-lg mb-4">
-                  {selectedCategory ? `${selectedCategory}科室暂无题目` : '题库中暂无题目'}
+                  {selectedCategory !== 'all' ? `${selectedCategory}科室暂无题目` : '题库中暂无题目'}
                 </p>
                 <Button onClick={() => setIsDialogOpen(true)}>
                   添加第一道题目
