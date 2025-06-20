@@ -9,7 +9,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
+import { Upload } from 'lucide-react';
 import { Question, Category } from '../../types/exam';
+import ImportDialog from './ImportDialog';
 
 const QuestionBankManager: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([
@@ -63,6 +65,7 @@ const QuestionBankManager: React.FC = () => {
   });
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
 
   const { toast } = useToast();
 
@@ -169,6 +172,52 @@ const QuestionBankManager: React.FC = () => {
     }
   };
 
+  const handleImportQuestions = (file: File) => {
+    // 模拟导入处理
+    console.log('导入题目文件:', file.name);
+    
+    // 模拟添加导入的题目
+    const importedQuestions: Question[] = [
+      {
+        id: Date.now().toString(),
+        type: 'choice',
+        content: '导入的选择题示例',
+        options: ['选项A', '选项B', '选项C', '选项D'],
+        correctAnswer: 0,
+        category: '消化内科',
+        score: 2,
+        difficulty: 'medium'
+      },
+      {
+        id: (Date.now() + 1).toString(),
+        type: 'judgment',
+        content: '导入的判断题示例',
+        correctAnswer: '正确',
+        category: '消化内科',
+        score: 1,
+        difficulty: 'easy'
+      }
+    ];
+    
+    setQuestions([...questions, ...importedQuestions]);
+    
+    // 更新科室题目数量
+    const categoryUpdates = {};
+    importedQuestions.forEach(q => {
+      categoryUpdates[q.category] = (categoryUpdates[q.category] || 0) + 1;
+    });
+    
+    setCategories(categories.map(cat => ({
+      ...cat,
+      questionCount: cat.questionCount + (categoryUpdates[cat.name] || 0)
+    })));
+    
+    toast({
+      title: "导入成功",
+      description: `成功导入 ${importedQuestions.length} 道题目`
+    });
+  };
+
   const filteredQuestions = selectedCategory === 'all' 
     ? questions 
     : questions.filter(q => q.category === selectedCategory);
@@ -198,6 +247,10 @@ const QuestionBankManager: React.FC = () => {
         <div className="flex space-x-3">
           <Button onClick={handleAddCategory} variant="outline">
             添加科室
+          </Button>
+          <Button variant="outline" onClick={() => setIsImportOpen(true)}>
+            <Upload className="w-4 h-4 mr-2" />
+            导入题目
           </Button>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
@@ -492,6 +545,14 @@ const QuestionBankManager: React.FC = () => {
           </div>
         </TabsContent>
       </Tabs>
+
+      <ImportDialog
+        isOpen={isImportOpen}
+        onClose={() => setIsImportOpen(false)}
+        title="导入题目"
+        onImport={handleImportQuestions}
+        templateDownloadUrl="/templates/question_template.xlsx"
+      />
     </div>
   );
 };

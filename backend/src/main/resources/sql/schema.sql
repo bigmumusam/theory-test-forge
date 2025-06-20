@@ -18,7 +18,10 @@ CREATE TABLE `sys_user` (
   `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `remark` varchar(500) DEFAULT '' COMMENT '备注',
   PRIMARY KEY (`user_id`),
-  UNIQUE KEY `uk_id_number` (`id_number`)
+  UNIQUE KEY `uk_id_number` (`id_number`),
+  KEY `idx_role` (`role`),
+  KEY `idx_department` (`department`),
+  KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户信息表';
 
 -- 科室表
@@ -34,8 +37,27 @@ CREATE TABLE `sys_department` (
   `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `remark` varchar(500) DEFAULT '' COMMENT '备注',
   PRIMARY KEY (`dept_id`),
-  UNIQUE KEY `uk_dept_code` (`dept_code`)
+  UNIQUE KEY `uk_dept_code` (`dept_code`),
+  KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='科室信息表';
+
+-- 角色表
+CREATE TABLE `sys_role` (
+  `role_id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '角色ID',
+  `role_name` varchar(30) NOT NULL COMMENT '角色名称',
+  `role_key` varchar(100) NOT NULL COMMENT '角色权限字符串',
+  `role_sort` int(11) NOT NULL COMMENT '显示顺序',
+  `status` char(1) NOT NULL DEFAULT '1' COMMENT '角色状态（1正常 0停用）',
+  `create_dept` bigint(20) DEFAULT NULL COMMENT '创建部门',
+  `create_by` bigint(20) DEFAULT NULL COMMENT '创建者',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_by` bigint(20) DEFAULT NULL COMMENT '更新者',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `remark` varchar(500) DEFAULT '' COMMENT '备注',
+  PRIMARY KEY (`role_id`),
+  UNIQUE KEY `uk_role_key` (`role_key`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='角色信息表';
 
 -- 题目分类表
 CREATE TABLE `exam_category` (
@@ -50,7 +72,8 @@ CREATE TABLE `exam_category` (
   `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `remark` varchar(500) DEFAULT '' COMMENT '备注',
   PRIMARY KEY (`category_id`),
-  UNIQUE KEY `uk_category_code` (`category_code`)
+  UNIQUE KEY `uk_category_code` (`category_code`),
+  KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='题目分类表';
 
 -- 题库表
@@ -73,6 +96,8 @@ CREATE TABLE `exam_question` (
   PRIMARY KEY (`question_id`),
   KEY `idx_category_id` (`category_id`),
   KEY `idx_difficulty` (`difficulty`),
+  KEY `idx_status` (`status`),
+  KEY `idx_type` (`question_type`),
   CONSTRAINT `fk_question_category` FOREIGN KEY (`category_id`) REFERENCES `exam_category` (`category_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='题库表';
 
@@ -85,6 +110,10 @@ CREATE TABLE `exam_config` (
   `total_score` int(11) NOT NULL COMMENT '总分',
   `pass_score` int(11) DEFAULT 60 COMMENT '及格分数',
   `question_count` int(11) NOT NULL COMMENT '题目数量',
+  `choice_count` int(11) DEFAULT 0 COMMENT '选择题数量',
+  `judgment_count` int(11) DEFAULT 0 COMMENT '判断题数量',
+  `choice_score` int(11) DEFAULT 2 COMMENT '选择题分值',
+  `judgment_score` int(11) DEFAULT 1 COMMENT '判断题分值',
   `status` char(1) DEFAULT '1' COMMENT '状态（1正常 0停用）',
   `create_dept` bigint(20) DEFAULT NULL COMMENT '创建部门',
   `create_by` bigint(20) DEFAULT NULL COMMENT '创建者',
@@ -94,6 +123,7 @@ CREATE TABLE `exam_config` (
   `remark` varchar(500) DEFAULT '' COMMENT '备注',
   PRIMARY KEY (`config_id`),
   KEY `idx_category_id` (`category_id`),
+  KEY `idx_status` (`status`),
   CONSTRAINT `fk_config_category` FOREIGN KEY (`category_id`) REFERENCES `exam_category` (`category_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='考试配置表';
 
@@ -120,6 +150,7 @@ CREATE TABLE `exam_record` (
   KEY `idx_user_id` (`user_id`),
   KEY `idx_config_id` (`config_id`),
   KEY `idx_status` (`status`),
+  KEY `idx_start_time` (`start_time`),
   CONSTRAINT `fk_record_user` FOREIGN KEY (`user_id`) REFERENCES `sys_user` (`user_id`),
   CONSTRAINT `fk_record_config` FOREIGN KEY (`config_id`) REFERENCES `exam_config` (`config_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='考试记录表';
@@ -146,12 +177,33 @@ CREATE TABLE `exam_answer` (
   CONSTRAINT `fk_answer_question` FOREIGN KEY (`question_id`) REFERENCES `exam_question` (`question_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='考试答题记录表';
 
+-- 统计视图
+CREATE VIEW `v_exam_statistics` AS
+SELECT 
+    DATE(er.start_time) as exam_date,
+    ec.category_name,
+    COUNT(*) as total_exams,
+    COUNT(CASE WHEN er.status = 'completed' THEN 1 END) as completed_exams,
+    COUNT(CASE WHEN er.status = 'timeout' THEN 1 END) as timeout_exams,
+    AVG(CASE WHEN er.status = 'completed' THEN er.score END) as avg_score,
+    COUNT(CASE WHEN er.score >= er.pass_score THEN 1 END) as pass_count
+FROM exam_record er
+LEFT JOIN exam_config cfg ON er.config_id = cfg.config_id
+LEFT JOIN exam_category ec ON cfg.category_id = ec.category_id
+GROUP BY DATE(er.start_time), ec.category_name;
+
 -- 插入初始数据
 INSERT INTO `sys_department` (`dept_name`, `dept_code`) VALUES
 ('消化内科', 'DEPT_01'),
 ('肝胆外科', 'DEPT_02'),
 ('心血管内科', 'DEPT_03'),
-('呼吸内科', 'DEPT_04');
+('呼吸内科', 'DEPT_04'),
+('系统管理', 'DEPT_SYS');
+
+INSERT INTO `sys_role` (`role_name`, `role_key`, `role_sort`, `remark`) VALUES
+('系统管理员', 'admin', 1, '超级管理员，拥有所有权限'),
+('普通考生', 'student', 2, '普通考生，只能参加考试'),
+('考试管理员', 'exam_admin', 3, '负责考试管理');
 
 INSERT INTO `sys_user` (`id_number`, `user_name`, `role`, `department`) VALUES
 ('110101199001011234', '管理员', 'admin', '系统管理'),
@@ -165,3 +217,8 @@ INSERT INTO `exam_category` (`category_name`, `category_code`) VALUES
 ('肝胆外科', 'CAT_02'),
 ('心血管内科', 'CAT_03'),
 ('呼吸内科', 'CAT_04');
+
+-- 创建索引优化查询性能
+CREATE INDEX `idx_exam_record_composite` ON `exam_record` (`user_id`, `status`, `start_time`);
+CREATE INDEX `idx_exam_answer_composite` ON `exam_answer` (`record_id`, `is_correct`);
+CREATE INDEX `idx_question_composite` ON `exam_question` (`category_id`, `difficulty`, `status`);
