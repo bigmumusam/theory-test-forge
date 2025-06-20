@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -7,6 +6,8 @@ import { User } from '../../types/auth';
 import QuestionBankManager from './QuestionBankManager';
 import ExamConfigManager from './ExamConfigManager';
 import ExamResults from './ExamResults';
+import UserManager from './UserManager';
+import RoleManager from './RoleManager';
 
 interface AdminDashboardProps {
   user: User;
@@ -48,8 +49,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
       <div className="container mx-auto px-4 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 bg-white p-1 h-12">
+          <TabsList className="grid w-full grid-cols-6 bg-white p-1 h-12">
             <TabsTrigger value="overview" className="h-10">系统概览</TabsTrigger>
+            <TabsTrigger value="users" className="h-10">人员管理</TabsTrigger>
+            <TabsTrigger value="roles" className="h-10">角色管理</TabsTrigger>
             <TabsTrigger value="questions" className="h-10">题库管理</TabsTrigger>
             <TabsTrigger value="config" className="h-10">考试配置</TabsTrigger>
             <TabsTrigger value="results" className="h-10">考试结果</TabsTrigger>
@@ -163,6 +166,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 </div>
               </Card>
             </div>
+          </TabsContent>
+
+          <TabsContent value="users">
+            <UserManager />
+          </TabsContent>
+
+          <TabsContent value="roles">
+            <RoleManager />
           </TabsContent>
 
           <TabsContent value="questions">
