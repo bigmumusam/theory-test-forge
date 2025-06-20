@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -7,10 +8,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Trash2, Edit, Plus, Search, Upload, Download } from 'lucide-react';
+import { Trash2, Edit, Plus, Search } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import ImportDialog from './ImportDialog';
 
 const UserManager = () => {
   const { toast } = useToast();
@@ -48,10 +47,7 @@ const UserManager = () => {
   const [selectedRole, setSelectedRole] = useState('all');
   const [selectedDepartment, setSelectedDepartment] = useState('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
-  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
-  const [currentPage, setCurrentPage] = useState(1);
   const [formData, setFormData] = useState({
     name: '',
     idNumber: '',
@@ -68,74 +64,12 @@ const UserManager = () => {
     { id: '5', name: '系统管理' }
   ];
 
-  const pageSize = 10;
   const filteredUsers = users.filter(user => {
     const matchesSearch = user.name.includes(searchKeyword) || user.idNumber.includes(searchKeyword);
     const matchesRole = selectedRole === 'all' || user.role === selectedRole;
     const matchesDepartment = selectedDepartment === 'all' || user.department === selectedDepartment;
     return matchesSearch && matchesRole && matchesDepartment;
   });
-
-  const totalPages = Math.ceil(filteredUsers.length / pageSize);
-  const paginatedUsers = filteredUsers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-
-  const importTemplate = [
-    { name: '示例姓名', idNumber: '110101199001011111', role: 'student', department: '消化内科' }
-  ];
-
-  const handleImport = (data: any[]) => {
-    const newUsers = data.map(item => ({
-      id: Date.now().toString() + Math.random(),
-      name: item.name || item['姓名'] || '',
-      idNumber: item.idNumber || item['身份证号'] || '',
-      role: item.role || item['角色'] || 'student',
-      department: item.department || item['科室'] || '',
-      status: '1',
-      createTime: new Date().toLocaleString('zh-CN')
-    }));
-    
-    setUsers([...users, ...newUsers]);
-    toast({
-      title: "导入成功",
-      description: `成功导入 ${newUsers.length} 个用户`
-    });
-  };
-
-  const handleSelectUser = (userId: string, checked: boolean) => {
-    if (checked) {
-      setSelectedUsers([...selectedUsers, userId]);
-    } else {
-      setSelectedUsers(selectedUsers.filter(id => id !== userId));
-    }
-  };
-
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedUsers(paginatedUsers.map(user => user.id));
-    } else {
-      setSelectedUsers([]);
-    }
-  };
-
-  const handleBatchDelete = () => {
-    if (selectedUsers.length === 0) {
-      toast({
-        title: "请选择用户",
-        description: "请先选择要删除的用户",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    if (window.confirm(`确定要删除选中的 ${selectedUsers.length} 个用户吗？`)) {
-      setUsers(users.filter(user => !selectedUsers.includes(user.id)));
-      setSelectedUsers([]);
-      toast({
-        title: "批量删除成功",
-        description: `已删除 ${selectedUsers.length} 个用户`
-      });
-    }
-  };
 
   const handleAddUser = () => {
     setEditingUser(null);
@@ -215,90 +149,84 @@ const UserManager = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-gray-800">人员管理</h2>
-        <div className="flex space-x-2">
-          <Button onClick={() => setIsImportOpen(true)} variant="outline">
-            <Upload className="w-4 h-4 mr-2" />
-            导入用户
-          </Button>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={() => {/* handleAddUser logic */}} className="flex items-center space-x-2">
-                <Plus className="w-4 h-4" />
-                <span>添加用户</span>
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>{editingUser ? '编辑用户' : '添加用户'}</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="name">姓名</Label>
-                  <Input
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
-                    placeholder="请输入姓名"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="idNumber">身份证号</Label>
-                  <Input
-                    id="idNumber"
-                    value={formData.idNumber}
-                    onChange={(e) => setFormData({...formData, idNumber: e.target.value})}
-                    placeholder="请输入身份证号"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="role">角色</Label>
-                  <Select value={formData.role} onValueChange={(value) => setFormData({...formData, role: value})}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择角色" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="admin">管理员</SelectItem>
-                      <SelectItem value="student">考生</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="department">科室</Label>
-                  <Select value={formData.department} onValueChange={(value) => setFormData({...formData, department: value})}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择科室" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {departments.map(dept => (
-                        <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="status">状态</Label>
-                  <Select value={formData.status} onValueChange={(value) => setFormData({...formData, status: value})}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择状态" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="1">正常</SelectItem>
-                      <SelectItem value="0">停用</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex justify-end space-x-2">
-                  <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                    取消
-                  </Button>
-                  <Button onClick={handleSaveUser}>
-                    {editingUser ? '更新' : '添加'}
-                  </Button>
-                </div>
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <Button onClick={handleAddUser} className="flex items-center space-x-2">
+              <Plus className="w-4 h-4" />
+              <span>添加用户</span>
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>{editingUser ? '编辑用户' : '添加用户'}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="name">姓名</Label>
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  placeholder="请输入姓名"
+                />
               </div>
-            </DialogContent>
-          </Dialog>
-        </div>
+              <div>
+                <Label htmlFor="idNumber">身份证号</Label>
+                <Input
+                  id="idNumber"
+                  value={formData.idNumber}
+                  onChange={(e) => setFormData({...formData, idNumber: e.target.value})}
+                  placeholder="请输入身份证号"
+                />
+              </div>
+              <div>
+                <Label htmlFor="role">角色</Label>
+                <Select value={formData.role} onValueChange={(value) => setFormData({...formData, role: value})}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择角色" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">管理员</SelectItem>
+                    <SelectItem value="student">考生</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="department">科室</Label>
+                <Select value={formData.department} onValueChange={(value) => setFormData({...formData, department: value})}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择科室" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {departments.map(dept => (
+                      <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="status">状态</Label>
+                <Select value={formData.status} onValueChange={(value) => setFormData({...formData, status: value})}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择状态" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">正常</SelectItem>
+                    <SelectItem value="0">停用</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex justify-end space-x-2">
+                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+                  取消
+                </Button>
+                <Button onClick={handleSaveUser}>
+                  {editingUser ? '更新' : '添加'}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <Card className="p-6">
@@ -349,30 +277,18 @@ const UserManager = () => {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-12 font-bold">
-                  <Checkbox
-                    checked={paginatedUsers.length > 0 && selectedUsers.length === paginatedUsers.length}
-                    onCheckedChange={handleSelectAll}
-                  />
-                </TableHead>
-                <TableHead className="font-bold">姓名</TableHead>
-                <TableHead className="font-bold">身份证号</TableHead>
-                <TableHead className="font-bold">角色</TableHead>
-                <TableHead className="font-bold">科室</TableHead>
-                <TableHead className="font-bold">状态</TableHead>
-                <TableHead className="font-bold">创建时间</TableHead>
-                <TableHead className="font-bold w-32">操作</TableHead>
+                <TableHead>姓名</TableHead>
+                <TableHead>身份证号</TableHead>
+                <TableHead>角色</TableHead>
+                <TableHead>科室</TableHead>
+                <TableHead>状态</TableHead>
+                <TableHead>创建时间</TableHead>
+                <TableHead className="w-32">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedUsers.map(user => (
+              {filteredUsers.map(user => (
                 <TableRow key={user.id}>
-                  <TableCell>
-                    <Checkbox
-                      checked={selectedUsers.includes(user.id)}
-                      onCheckedChange={(checked) => handleSelectUser(user.id, checked as boolean)}
-                    />
-                  </TableCell>
                   <TableCell className="font-medium">{user.name}</TableCell>
                   <TableCell>{user.idNumber}</TableCell>
                   <TableCell>
@@ -411,48 +327,12 @@ const UserManager = () => {
           </Table>
         </div>
 
-        {/* 分页控件 */}
-        <div className="flex justify-between items-center mt-4">
-          <div className="text-sm text-gray-500">
-            显示 {(currentPage - 1) * pageSize + 1} 到 {Math.min(currentPage * pageSize, filteredUsers.length)} 项，共 {filteredUsers.length} 项
-          </div>
-          <div className="flex space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-              disabled={currentPage === 1}
-            >
-              上一页
-            </Button>
-            <span className="flex items-center px-3 text-sm">
-              {currentPage} / {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-              disabled={currentPage === totalPages}
-            >
-              下一页
-            </Button>
-          </div>
-        </div>
-
         {filteredUsers.length === 0 && (
           <div className="text-center py-8 text-gray-500">
             没有找到符合条件的用户
           </div>
         )}
       </Card>
-
-      <ImportDialog
-        open={isImportOpen}
-        onOpenChange={setIsImportOpen}
-        title="导入用户"
-        onImport={handleImport}
-        templateData={importTemplate}
-      />
     </div>
   );
 };

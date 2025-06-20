@@ -21,23 +21,6 @@ CREATE TABLE `sys_user` (
   UNIQUE KEY `uk_id_number` (`id_number`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户信息表';
 
--- 角色表
-CREATE TABLE `sys_role` (
-  `role_id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '角色ID',
-  `role_name` varchar(30) NOT NULL COMMENT '角色名称',
-  `role_key` varchar(100) NOT NULL COMMENT '角色权限字符串',
-  `role_sort` int(4) NOT NULL COMMENT '显示顺序',
-  `status` char(1) NOT NULL DEFAULT '1' COMMENT '角色状态（1正常 0停用）',
-  `create_dept` bigint(20) DEFAULT NULL COMMENT '创建部门',
-  `create_by` bigint(20) DEFAULT NULL COMMENT '创建者',
-  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `update_by` bigint(20) DEFAULT NULL COMMENT '更新者',
-  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-  `remark` varchar(500) DEFAULT '' COMMENT '备注',
-  PRIMARY KEY (`role_id`),
-  UNIQUE KEY `uk_role_key` (`role_key`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='角色信息表';
-
 -- 科室表
 CREATE TABLE `sys_department` (
   `dept_id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '科室ID',
@@ -102,9 +85,6 @@ CREATE TABLE `exam_config` (
   `total_score` int(11) NOT NULL COMMENT '总分',
   `pass_score` int(11) DEFAULT 60 COMMENT '及格分数',
   `question_count` int(11) NOT NULL COMMENT '题目数量',
-  `easy_count` int(11) DEFAULT 0 COMMENT '简单题数量',
-  `medium_count` int(11) DEFAULT 0 COMMENT '中等题数量',
-  `hard_count` int(11) DEFAULT 0 COMMENT '困难题数量',
   `status` char(1) DEFAULT '1' COMMENT '状态（1正常 0停用）',
   `create_dept` bigint(20) DEFAULT NULL COMMENT '创建部门',
   `create_by` bigint(20) DEFAULT NULL COMMENT '创建者',
@@ -171,12 +151,7 @@ INSERT INTO `sys_department` (`dept_name`, `dept_code`) VALUES
 ('消化内科', 'DEPT_01'),
 ('肝胆外科', 'DEPT_02'),
 ('心血管内科', 'DEPT_03'),
-('呼吸内科', 'DEPT_04'),
-('系统管理', 'DEPT_05');
-
-INSERT INTO `sys_role` (`role_name`, `role_key`, `role_sort`, `status`, `remark`) VALUES
-('系统管理员', 'admin', 1, '1', '超级管理员，拥有所有权限'),
-('普通考生', 'student', 2, '1', '普通考生，只能参加考试');
+('呼吸内科', 'DEPT_04');
 
 INSERT INTO `sys_user` (`id_number`, `user_name`, `role`, `department`) VALUES
 ('110101199001011234', '管理员', 'admin', '系统管理'),
@@ -190,14 +165,3 @@ INSERT INTO `exam_category` (`category_name`, `category_code`) VALUES
 ('肝胆外科', 'CAT_02'),
 ('心血管内科', 'CAT_03'),
 ('呼吸内科', 'CAT_04');
-
--- 插入示例题目
-INSERT INTO `exam_question` (`question_type`, `question_content`, `question_options`, `correct_answer`, `category_id`, `difficulty`, `score`) VALUES
-('choice', '胃溃疡最常见的并发症是？', '["穿孔", "出血", "幽门梗阻", "癌变"]', '1', 1, 'medium', 2),
-('judgment', 'Hp感染是胃溃疡的主要病因之一', NULL, '正确', 1, 'easy', 1),
-('choice', '胆囊结石的典型症状是？', '["右上腹疼痛", "左上腹疼痛", "脐周疼痛", "下腹疼痛"]', '0', 2, 'medium', 2);
-
--- 插入示例考试配置
-INSERT INTO `exam_config` (`exam_name`, `category_id`, `duration`, `total_score`, `pass_score`, `question_count`, `easy_count`, `medium_count`, `hard_count`) VALUES
-('消化内科理论考试', 1, 60, 100, 60, 10, 3, 5, 2),
-('肝胆外科专业考试', 2, 90, 100, 60, 15, 5, 7, 3);
