@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -9,7 +8,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
+import { Upload, FileText } from 'lucide-react';
 import { Question, Category } from '../../types/exam';
+import ImportDialog from './ImportDialog';
+import ExamPaperGenerator from './ExamPaperGenerator';
 
 const QuestionBankManager: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([
@@ -63,8 +65,22 @@ const QuestionBankManager: React.FC = () => {
   });
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
 
   const { toast } = useToast();
+
+  const importTemplate = [
+    {
+      type: 'choice',
+      content: '示例选择题？',
+      options: '选项A,选项B,选项C,选项D',
+      correctAnswer: '0',
+      category: '消化内科',
+      score: '2',
+      difficulty: 'medium'
+    }
+  ];
 
   const handleAddCategory = () => {
     const name = prompt('请输入科室名称：');
@@ -196,6 +212,14 @@ const QuestionBankManager: React.FC = () => {
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-gray-800">题库管理</h2>
         <div className="flex space-x-3">
+          <Button onClick={() => setIsImportOpen(true)} variant="outline">
+            <Upload className="w-4 h-4 mr-2" />
+            导入题目
+          </Button>
+          <Button onClick={() => setIsGeneratorOpen(true)} variant="outline">
+            <FileText className="w-4 h-4 mr-2" />
+            生成试卷
+          </Button>
           <Button onClick={handleAddCategory} variant="outline">
             添加科室
           </Button>
@@ -492,6 +516,20 @@ const QuestionBankManager: React.FC = () => {
           </div>
         </TabsContent>
       </Tabs>
+
+      <ImportDialog
+        open={isImportOpen}
+        onOpenChange={setIsImportOpen}
+        title="导入题目"
+        onImport={handleImportQuestions}
+        templateData={importTemplate}
+      />
+
+      <ExamPaperGenerator
+        open={isGeneratorOpen}
+        onOpenChange={setIsGeneratorOpen}
+        categories={categories.map(cat => cat.name)}
+      />
     </div>
   );
 };
