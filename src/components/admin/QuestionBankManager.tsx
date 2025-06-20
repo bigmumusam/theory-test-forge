@@ -207,6 +207,45 @@ const QuestionBankManager: React.FC = () => {
     }
   };
 
+  const handleImportQuestions = (importedData: any[]) => {
+    try {
+      const newQuestions: Question[] = importedData.map((item, index) => ({
+        id: (Date.now() + index).toString(),
+        type: item.type as 'choice' | 'judgment',
+        content: item.content,
+        options: item.type === 'choice' ? item.options.split(',').map((opt: string) => opt.trim()) : undefined,
+        correctAnswer: item.type === 'choice' ? parseInt(item.correctAnswer) : item.correctAnswer,
+        category: item.category,
+        score: parseInt(item.score) || 2,
+        difficulty: item.difficulty as 'easy' | 'medium' | 'hard'
+      }));
+
+      setQuestions([...questions, ...newQuestions]);
+      
+      // Update category question counts
+      const categoryUpdates: { [key: string]: number } = {};
+      newQuestions.forEach(q => {
+        categoryUpdates[q.category] = (categoryUpdates[q.category] || 0) + 1;
+      });
+      
+      setCategories(categories.map(cat => ({
+        ...cat,
+        questionCount: cat.questionCount + (categoryUpdates[cat.name] || 0)
+      })));
+
+      toast({
+        title: "导入成功",
+        description: `成功导入 ${newQuestions.length} 道题目`
+      });
+    } catch (error) {
+      toast({
+        title: "导入失败",
+        description: "数据格式错误，请检查导入文件",
+        variant: "destructive"
+      });
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">

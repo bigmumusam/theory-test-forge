@@ -3,6 +3,7 @@ import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
 import { LogOut } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { User } from '../../types/auth';
 import UserManager from './UserManager';
 import RoleManager from './RoleManager';
 import QuestionBankManager from './QuestionBankManager';
@@ -11,10 +12,11 @@ import ExamResults from './ExamResults';
 import AdminSidebar from './AdminSidebar';
 
 interface AdminDashboardProps {
+  user?: User;
   onLogout: () => void;
 }
 
-const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
+const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const { toast } = useToast();
 
