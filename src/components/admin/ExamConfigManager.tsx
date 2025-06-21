@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -7,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { ExamConfig } from '../../types/exam';
+import ExamPaperGenerator from './ExamPaperGenerator';
 
 const ExamConfigManager: React.FC = () => {
   const [examConfigs, setExamConfigs] = useState<ExamConfig[]>([
@@ -55,6 +55,9 @@ const ExamConfigManager: React.FC = () => {
     const judgmentTotal = config.questionTypes.judgment.count * config.questionTypes.judgment.score;
     return choiceTotal + judgmentTotal;
   };
+
+  const [paperGeneratorOpen, setPaperGeneratorOpen] = useState(false);
+  const [selectedConfigForPaper, setSelectedConfigForPaper] = useState<ExamConfig | null>(null);
 
   const handleAddConfig = () => {
     if (!newConfig.name || !newConfig.categories?.length) {
@@ -110,6 +113,20 @@ const ExamConfigManager: React.FC = () => {
     toast({
       title: "配置删除成功",
       description: "已删除考试配置"
+    });
+  };
+
+  const handleGeneratePaper = (config: ExamConfig) => {
+    setSelectedConfigForPaper(config);
+    setPaperGeneratorOpen(true);
+  };
+
+  const handleEditConfig = (config: ExamConfig) => {
+    // TODO: Implement edit functionality
+    toast({
+      title: "编辑功能",
+      description: "编辑功能正在开发中",
+      variant: "destructive"
     });
   };
 
@@ -288,10 +305,17 @@ const ExamConfigManager: React.FC = () => {
                 </div>
                 
                 <div className="flex space-x-2">
-                  <Button size="sm" variant="outline">
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    onClick={() => handleEditConfig(config)}
+                  >
                     编辑
                   </Button>
-                  <Button size="sm">
+                  <Button 
+                    size="sm"
+                    onClick={() => handleGeneratePaper(config)}
+                  >
                     生成试卷
                   </Button>
                 </div>
@@ -300,6 +324,15 @@ const ExamConfigManager: React.FC = () => {
           ))}
         </div>
       </div>
+
+      {/* 试卷生成对话框 */}
+      <ExamPaperGenerator
+        isOpen={paperGeneratorOpen}
+        onClose={() => {
+          setPaperGeneratorOpen(false);
+          setSelectedConfigForPaper(null);
+        }}
+      />
     </div>
   );
 };
