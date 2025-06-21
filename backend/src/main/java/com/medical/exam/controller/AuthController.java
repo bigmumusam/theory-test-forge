@@ -25,6 +25,6 @@ public class AuthController {
 
     @PostMapping("/logout")
     public Result<Void> logout() {
-        return Result.success("退出成功");
+        return Result.success();
     }
 }

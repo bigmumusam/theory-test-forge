@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -12,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Upload } from 'lucide-react';
 import { Question, Category } from '../../types/exam';
 import ImportDialog from './ImportDialog';
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 
 const QuestionBankManager: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([
@@ -68,6 +68,59 @@ const QuestionBankManager: React.FC = () => {
   const [isImportOpen, setIsImportOpen] = useState(false);
 
   const { toast } = useToast();
+
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [editCategoryForm, setEditCategoryForm] = useState<{ name: string; description: string }>({ name: '', description: '' });
+  const [tabValue, setTabValue] = useState<'categories' | 'questions'>('categories');
+
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [page, setPage] = useState(1);
+  const pageSize = 5;
+
+  const [filterType, setFilterType] = useState<'all' | 'choice' | 'judgment'>('all');
+  const [filterDifficulty, setFilterDifficulty] = useState<'all' | 'easy' | 'medium' | 'hard'>('all');
+  const [filterScoreMin, setFilterScoreMin] = useState('');
+  const [filterScoreMax, setFilterScoreMax] = useState('');
+  const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
+  const [editQuestionForm, setEditQuestionForm] = useState<Partial<Question>>({});
+
+  const [selectedQuestions, setSelectedQuestions] = useState<string[]>([]);
+
+  const filteredQuestions = questions.filter(q =>
+    (selectedCategory === 'all' || q.category === selectedCategory) &&
+    (!searchKeyword || q.content.includes(searchKeyword)) &&
+    (filterType === 'all' || q.type === filterType) &&
+    (filterDifficulty === 'all' || q.difficulty === filterDifficulty) &&
+    (!filterScoreMin || q.score >= Number(filterScoreMin)) &&
+    (!filterScoreMax || q.score <= Number(filterScoreMax))
+  );
+  const totalPages = Math.ceil(filteredQuestions.length / pageSize);
+  const pagedQuestions = filteredQuestions.slice((page - 1) * pageSize, page * pageSize);
+
+  const allCurrentPageIds = pagedQuestions.map(q => q.id);
+  const isAllCurrentPageSelected = allCurrentPageIds.every(id => selectedQuestions.includes(id));
+  const toggleSelectAllCurrentPage = () => {
+    if (isAllCurrentPageSelected) {
+      setSelectedQuestions(selectedQuestions.filter(id => !allCurrentPageIds.includes(id)));
+    } else {
+      setSelectedQuestions([...new Set([...selectedQuestions, ...allCurrentPageIds])]);
+    }
+  };
+  const handleSelectQuestion = (id: string) => {
+    setSelectedQuestions(selectedQuestions =>
+      selectedQuestions.includes(id)
+        ? selectedQuestions.filter(qid => qid !== id)
+        : [...selectedQuestions, id]
+    );
+  };
+  const handleBatchDelete = () => {
+    if (selectedQuestions.length === 0) return;
+    if (window.confirm(`确定要批量删除选中的${selectedQuestions.length}道题目吗？`)) {
+      setQuestions(qs => qs.filter(q => !selectedQuestions.includes(q.id)));
+      setSelectedQuestions([]);
+      toast({ title: '批量删除成功' });
+    }
+  };
 
   const handleAddCategory = () => {
     const name = prompt('请输入科室名称：');
@@ -217,10 +270,6 @@ const QuestionBankManager: React.FC = () => {
       description: `成功导入 ${importedQuestions.length} 道题目`
     });
   };
-
-  const filteredQuestions = selectedCategory === 'all' 
-    ? questions 
-    : questions.filter(q => q.category === selectedCategory);
 
   const getDifficultyText = (difficulty: string) => {
     switch (difficulty) {
@@ -396,7 +445,7 @@ const QuestionBankManager: React.FC = () => {
         </div>
       </div>
 
-      <Tabs defaultValue="categories" className="space-y-4">
+      <Tabs value={tabValue} onValueChange={v => setTabValue(v as 'categories' | 'questions')} className="space-y-4">
         <TabsList>
           <TabsTrigger value="categories">科室管理</TabsTrigger>
           <TabsTrigger value="questions">题目管理</TabsTrigger>
@@ -419,16 +468,19 @@ const QuestionBankManager: React.FC = () => {
                     variant="outline" 
                     onClick={() => {
                       setSelectedCategory(category.name);
-                      // 自动切换到题目管理标签页
-                      const tabsTrigger = document.querySelector('[value="questions"]') as HTMLElement;
-                      if (tabsTrigger) {
-                        tabsTrigger.click();
-                      }
+                      setTabValue('questions');
+                      setTimeout(() => {
+                        const questionList = document.getElementById('question-list-section');
+                        if (questionList) questionList.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }, 200);
                     }}
                   >
                     查看题目
                   </Button>
-                  <Button size="sm" variant="outline">
+                  <Button size="sm" variant="outline" onClick={() => {
+                    setEditingCategory(category);
+                    setEditCategoryForm({ name: category.name, description: category.description });
+                  }}>
                     编辑
                   </Button>
                 </div>
@@ -438,110 +490,244 @@ const QuestionBankManager: React.FC = () => {
         </TabsContent>
 
         <TabsContent value="questions">
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <div className="flex items-center space-x-4">
-                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                  <SelectTrigger className="w-48">
-                    <SelectValue placeholder="选择科室筛选" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">全部科室</SelectItem>
-                    {categories.map(cat => (
-                      <SelectItem key={cat.id} value={cat.name}>{cat.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {selectedCategory !== 'all' && (
-                  <Button variant="outline" onClick={() => setSelectedCategory('all')}>
-                    清除筛选
-                  </Button>
-                )}
-              </div>
-              <p className="text-sm text-gray-600">
-                显示 {filteredQuestions.length} 个题目
-              </p>
+          <div id="question-list-section" className="space-y-4">
+            <div className="flex flex-wrap gap-2 items-center mb-2">
+              <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                <SelectTrigger className="w-40"><SelectValue placeholder="选择科室筛选" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部科室</SelectItem>
+                  {categories.map(cat => (
+                    <SelectItem key={cat.id} value={cat.name}>{cat.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={filterType} onValueChange={v => setFilterType(v as any)}>
+                <SelectTrigger className="w-32"><SelectValue placeholder="题型" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部题型</SelectItem>
+                  <SelectItem value="choice">选择题</SelectItem>
+                  <SelectItem value="judgment">判断题</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={filterDifficulty} onValueChange={v => setFilterDifficulty(v as any)}>
+                <SelectTrigger className="w-32"><SelectValue placeholder="难度" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部难度</SelectItem>
+                  <SelectItem value="easy">简单</SelectItem>
+                  <SelectItem value="medium">中等</SelectItem>
+                  <SelectItem value="hard">困难</SelectItem>
+                </SelectContent>
+              </Select>
+              <Input className="w-20" type="number" min={0} placeholder="分数≥" value={filterScoreMin} onChange={e => setFilterScoreMin(e.target.value)} />
+              <Input className="w-20" type="number" min={0} placeholder="分数≤" value={filterScoreMax} onChange={e => setFilterScoreMax(e.target.value)} />
+              <Input className="w-64" placeholder="输入题目关键词查询" value={searchKeyword} onChange={e => { setSearchKeyword(e.target.value); setPage(1); }} />
+              {selectedCategory !== 'all' && <Button variant="outline" onClick={() => setSelectedCategory('all')}>清除筛选</Button>}
             </div>
-
+            <p className="text-sm text-gray-600">共 {filteredQuestions.length} 题，当前第 {page}/{totalPages || 1} 页</p>
             {filteredQuestions.length === 0 ? (
               <div className="text-center py-12">
-                <p className="text-gray-500 text-lg mb-4">
-                  {selectedCategory !== 'all' ? `${selectedCategory}科室暂无题目` : '题库中暂无题目'}
-                </p>
-                <Button onClick={() => setIsDialogOpen(true)}>
-                  添加第一道题目
-                </Button>
+                <p className="text-gray-500 text-lg mb-4">{selectedCategory !== 'all' ? `${selectedCategory}科室暂无题目` : '题库中暂无题目'}</p>
+                <Button onClick={() => setIsDialogOpen(true)}>添加第一道题目</Button>
               </div>
             ) : (
-              <div className="space-y-4">
-                {filteredQuestions.map(question => (
-                  <Card key={question.id} className="p-6">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3 mb-3">
-                          <span className={`px-2 py-1 text-xs rounded ${
-                            question.type === 'choice' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
-                          }`}>
-                            {question.type === 'choice' ? '选择题' : '判断题'}
-                          </span>
-                          <span className="px-2 py-1 text-xs bg-gray-100 text-gray-800 rounded">
-                            {question.category}
-                          </span>
-                          <span className="px-2 py-1 text-xs bg-purple-100 text-purple-800 rounded">
-                            {question.score}分
-                          </span>
-                          <span className={`px-2 py-1 text-xs rounded ${getDifficultyColor(question.difficulty)}`}>
-                            {getDifficultyText(question.difficulty)}
-                          </span>
-                        </div>
-                        
-                        <h4 className="text-lg font-medium text-gray-800 mb-3">{question.content}</h4>
-                        
+              <>
+                <div className="flex items-center mb-2">
+                  <input type="checkbox" checked={isAllCurrentPageSelected} onChange={toggleSelectAllCurrentPage} className="mr-2" />
+                  <span>本页全选</span>
+                  {selectedQuestions.length > 0 && (
+                    <Button variant="destructive" size="sm" className="ml-4" onClick={handleBatchDelete}>批量删除（{selectedQuestions.length}）</Button>
+                  )}
+                </div>
+                <Accordion type="multiple" className="space-y-2">
+                  {pagedQuestions.map(question => (
+                    <AccordionItem key={question.id} value={question.id}>
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedQuestions.includes(question.id)}
+                          onChange={() => handleSelectQuestion(question.id)}
+                          className="mr-2"
+                        />
+                        <AccordionTrigger className="flex-1">
+                          <div className="flex items-center space-x-3">
+                            <span className={`px-2 py-1 text-xs rounded ${question.type === 'choice' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>{question.type === 'choice' ? '选择题' : '判断题'}</span>
+                            <span className="px-2 py-1 text-xs bg-gray-100 text-gray-800 rounded">{question.category}</span>
+                            <span className="px-2 py-1 text-xs bg-purple-100 text-purple-800 rounded">{question.score}分</span>
+                            <span className={`px-2 py-1 text-xs rounded ${getDifficultyColor(question.difficulty)}`}>{getDifficultyText(question.difficulty)}</span>
+                            <span className="ml-2 text-base text-gray-800 font-medium">{question.content}</span>
+                          </div>
+                        </AccordionTrigger>
+                      </div>
+                      <AccordionContent>
                         {question.type === 'choice' && question.options && (
-                          <div className="space-y-2">
+                          <div className="space-y-2 mt-2">
                             {question.options.map((option, index) => (
-                              <div key={index} className={`flex items-center space-x-2 p-2 rounded ${
-                                question.correctAnswer === index ? 'bg-green-50 border border-green-200' : 'bg-gray-50'
-                              }`}>
+                              <div key={index} className={`flex items-center space-x-2 p-2 rounded ${question.correctAnswer === index ? 'bg-green-50 border border-green-200' : 'bg-gray-50'}`}>
                                 <span className="font-medium">{String.fromCharCode(65 + index)}.</span>
                                 <span>{option}</span>
-                                {question.correctAnswer === index && (
-                                  <span className="text-green-600 text-sm ml-auto">✓ 正确答案</span>
-                                )}
+                                {question.correctAnswer === index && <span className="text-green-600 text-sm ml-auto">✓ 正确答案</span>}
                               </div>
                             ))}
                           </div>
                         )}
-                        
                         {question.type === 'judgment' && (
-                          <div className="flex items-center space-x-4">
+                          <div className="flex items-center space-x-4 mt-2">
                             <span className="text-gray-600">正确答案：</span>
-                            <span className={`px-3 py-1 rounded text-sm ${
-                              question.correctAnswer === '正确' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                            }`}>
-                              {question.correctAnswer}
-                            </span>
+                            <span className={`px-3 py-1 rounded text-sm ${question.correctAnswer === '正确' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{question.correctAnswer}</span>
                           </div>
                         )}
-                      </div>
-                      
-                      <div className="ml-4 flex flex-col space-y-2">
-                        <Button size="sm" variant="outline">
-                          编辑
-                        </Button>
-                        <Button 
-                          size="sm" 
-                          variant="destructive" 
-                          onClick={() => handleDeleteQuestion(question.id)}
-                        >
-                          删除
-                        </Button>
+                        <div className="flex space-x-2 mt-4">
+                          <Button size="sm" variant="outline" onClick={() => {
+                            setEditingQuestion(question);
+                            setEditQuestionForm({ ...question });
+                          }}>编辑</Button>
+                          <Button size="sm" variant="destructive" onClick={() => handleDeleteQuestion(question.id)}>删除</Button>
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  ))}
+                </Accordion>
+                <div className="flex justify-center items-center space-x-4 mt-6">
+                  <Button variant="outline" disabled={page === 1} onClick={() => setPage(p => Math.max(1, p - 1))}>上一页</Button>
+                  <span>第 {page} / {totalPages || 1} 页</span>
+                  <Button variant="outline" disabled={page === totalPages || totalPages === 0} onClick={() => setPage(p => Math.min(totalPages, p + 1))}>下一页</Button>
+                </div>
+              </>
+            )}
+            <Dialog open={!!editingQuestion} onOpenChange={open => { if (!open) setEditingQuestion(null); }}>
+              <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>编辑题目</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>题目类型</Label>
+                      <Select 
+                        value={editQuestionForm.type as string} 
+                        onValueChange={value => setEditQuestionForm(f => ({ ...f, type: value as 'choice' | 'judgment', correctAnswer: value === 'choice' ? 0 : '正确' }))}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="choice">选择题</SelectItem>
+                          <SelectItem value="judgment">判断题</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>所属科室</Label>
+                      <Select 
+                        value={editQuestionForm.category as string} 
+                        onValueChange={value => setEditQuestionForm(f => ({ ...f, category: value }))}
+                      >
+                        <SelectTrigger><SelectValue placeholder="选择科室" /></SelectTrigger>
+                        <SelectContent>
+                          {categories.map(cat => (
+                            <SelectItem key={cat.id} value={cat.name}>{cat.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div>
+                    <Label>题目内容</Label>
+                    <Textarea 
+                      value={editQuestionForm.content} 
+                      onChange={e => setEditQuestionForm(f => ({ ...f, content: e.target.value }))}
+                      placeholder="请输入题目内容"
+                      rows={3}
+                    />
+                  </div>
+                  {editQuestionForm.type === 'choice' && (
+                    <div>
+                      <Label>选项设置</Label>
+                      <div className="space-y-2">
+                        {(editQuestionForm.options || ['', '', '', '']).map((option, index) => (
+                          <div key={index} className="flex items-center space-x-2">
+                            <span className="w-8 text-center font-medium">{String.fromCharCode(65 + index)}.</span>
+                            <Input 
+                              value={option}
+                              onChange={e => {
+                                const newOptions = [...(editQuestionForm.options || ['', '', '', ''])];
+                                newOptions[index] = e.target.value;
+                                setEditQuestionForm(f => ({ ...f, options: newOptions }));
+                              }}
+                              placeholder={`选项${String.fromCharCode(65 + index)}`}
+                              className="flex-1"
+                            />
+                            <input 
+                              type="radio" 
+                              name="edit-correct" 
+                              checked={editQuestionForm.correctAnswer === index}
+                              onChange={() => setEditQuestionForm(f => ({ ...f, correctAnswer: index }))}
+                              className="w-4 h-4"
+                            />
+                            <label className="text-sm text-gray-600">正确</label>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  </Card>
-                ))}
-              </div>
-            )}
+                  )}
+                  {editQuestionForm.type === 'judgment' && (
+                    <div>
+                      <Label>正确答案</Label>
+                      <Select 
+                        value={editQuestionForm.correctAnswer as string} 
+                        onValueChange={value => setEditQuestionForm(f => ({ ...f, correctAnswer: value }))}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="正确">正确</SelectItem>
+                          <SelectItem value="错误">错误</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>分值</Label>
+                      <Input 
+                        type="number" 
+                        value={editQuestionForm.score} 
+                        onChange={e => setEditQuestionForm(f => ({ ...f, score: parseInt(e.target.value) }))}
+                        min="1" 
+                        max="10"
+                      />
+                    </div>
+                    <div>
+                      <Label>难度</Label>
+                      <Select 
+                        value={editQuestionForm.difficulty as string} 
+                        onValueChange={value => setEditQuestionForm(f => ({ ...f, difficulty: value as 'easy' | 'medium' | 'hard' }))}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="easy">简单</SelectItem>
+                          <SelectItem value="medium">中等</SelectItem>
+                          <SelectItem value="hard">困难</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <Button onClick={() => {
+                    if (!editQuestionForm.content || !editQuestionForm.category) {
+                      toast({ title: '请填写完整信息', variant: 'destructive' });
+                      return;
+                    }
+                    if (editQuestionForm.type === 'choice') {
+                      const hasEmptyOptions = (editQuestionForm.options || []).some(option => !option.trim());
+                      if (hasEmptyOptions) {
+                        toast({ title: '请填写完整信息', description: '选择题的所有选项都必须填写', variant: 'destructive' });
+                        return;
+                      }
+                    }
+                    setQuestions(qs => qs.map(q => q.id === editingQuestion!.id ? { ...q, ...editQuestionForm } as Question : q));
+                    setEditingQuestion(null);
+                    toast({ title: '题目已更新' });
+                  }} className="w-full">保存</Button>
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
         </TabsContent>
       </Tabs>
@@ -553,6 +739,33 @@ const QuestionBankManager: React.FC = () => {
         onImport={handleImportQuestions}
         templateDownloadUrl="/templates/question_template.xlsx"
       />
+
+      <Dialog open={!!editingCategory} onOpenChange={(open) => { if (!open) setEditingCategory(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>编辑科室</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>科室名称</Label>
+              <Input value={editCategoryForm.name} onChange={e => setEditCategoryForm(f => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div>
+              <Label>科室描述</Label>
+              <Textarea value={editCategoryForm.description} onChange={e => setEditCategoryForm(f => ({ ...f, description: e.target.value }))} />
+            </div>
+            <Button onClick={() => {
+              if (!editCategoryForm.name.trim() || !editCategoryForm.description.trim()) {
+                toast({ title: '请填写完整信息', variant: 'destructive' });
+                return;
+              }
+              setCategories(cats => cats.map(cat => cat.id === editingCategory!.id ? { ...cat, name: editCategoryForm.name, description: editCategoryForm.description } : cat));
+              setEditingCategory(null);
+              toast({ title: '科室信息已更新' });
+            }} className="w-full">保存</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
