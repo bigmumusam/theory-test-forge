@@ -225,21 +225,71 @@ public class AdminController {
         return Result.success("考试配置添加成功");
     }
 
-    // 试卷生成
+    @PutMapping("/exam-configs/{id}")
+    public Result<Void> updateExamConfig(@PathVariable String id,
+                                        @Valid @RequestBody Map<String, Object> request,
+                                        Authentication auth) {
+        adminService.updateExamConfig(id, request, Long.valueOf(auth.getName()));
+        return Result.success("考试配置更新成功");
+    }
+
+    @DeleteMapping("/exam-configs/{id}")
+    public Result<Void> deleteExamConfig(@PathVariable String id, Authentication auth) {
+        adminService.deleteExamConfig(id);
+        return Result.success("考试配置删除成功");
+    }
+
+    // 试卷生成和管理
     @PostMapping("/generate-paper")
     public Result<Map<String, Object>> generateExamPaper(@Valid @RequestBody Map<String, Object> request, 
                                                          Authentication auth) {
         Map<String, Object> paper = adminService.generateExamPaper(request, Long.valueOf(auth.getName()));
-        return Result.success(paper);
+        return Result.success("试卷生成成功", paper);
     }
 
     @GetMapping("/generated-papers")
     public Result<Map<String, Object>> getGeneratedPapers(
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "10") Integer size,
             Authentication auth) {
-        Map<String, Object> papers = adminService.getGeneratedPapers(page, size);
+        Map<String, Object> papers = adminService.getGeneratedPapers(category, status, page, size);
         return Result.success(papers);
+    }
+
+    @GetMapping("/generated-papers/{id}")
+    public Result<Map<String, Object>> getGeneratedPaperDetail(@PathVariable String id, Authentication auth) {
+        Map<String, Object> paper = adminService.getGeneratedPaperDetail(id);
+        return Result.success(paper);
+    }
+
+    @DeleteMapping("/generated-papers/{id}")
+    public Result<Void> deleteGeneratedPaper(@PathVariable String id, Authentication auth) {
+        adminService.deleteGeneratedPaper(id);
+        return Result.success("试卷删除成功");
+    }
+
+    @PostMapping("/generated-papers/{id}/questions/{questionId}/replace")
+    public Result<Map<String, Object>> replaceQuestion(@PathVariable String id,
+                                                       @PathVariable String questionId,
+                                                       @RequestBody Map<String, Object> request,
+                                                       Authentication auth) {
+        Map<String, Object> result = adminService.replaceQuestion(id, questionId, request, Long.valueOf(auth.getName()));
+        return Result.success("题目替换成功", result);
+    }
+
+    @GetMapping("/available-questions")
+    public Result<Map<String, Object>> getAvailableQuestions(
+            @RequestParam String category,
+            @RequestParam String type,
+            @RequestParam(required = false) String difficulty,
+            @RequestParam(required = false) String excludeIds,
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "20") Integer size,
+            Authentication auth) {
+        Map<String, Object> questions = adminService.getAvailableQuestions(category, type, difficulty, excludeIds, page, size);
+        return Result.success(questions);
     }
 
     // 统计分析
@@ -264,3 +314,4 @@ public class AdminController {
         return Result.success(performance);
     }
 }
+

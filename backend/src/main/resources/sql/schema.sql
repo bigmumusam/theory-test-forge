@@ -104,12 +104,11 @@ CREATE TABLE `exam_question` (
 -- 考试配置表
 CREATE TABLE `exam_config` (
   `config_id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '配置ID',
-  `exam_name` varchar(100) NOT NULL COMMENT '考试名称',
+  `config_name` varchar(100) NOT NULL COMMENT '配置名称',
   `category_id` bigint(20) NOT NULL COMMENT '分类ID',
   `duration` int(11) NOT NULL COMMENT '考试时长(分钟)',
   `total_score` int(11) NOT NULL COMMENT '总分',
   `pass_score` int(11) DEFAULT 60 COMMENT '及格分数',
-  `question_count` int(11) NOT NULL COMMENT '题目数量',
   `choice_count` int(11) DEFAULT 0 COMMENT '选择题数量',
   `judgment_count` int(11) DEFAULT 0 COMMENT '判断题数量',
   `choice_score` int(11) DEFAULT 2 COMMENT '选择题分值',
@@ -127,11 +126,53 @@ CREATE TABLE `exam_config` (
   CONSTRAINT `fk_config_category` FOREIGN KEY (`category_id`) REFERENCES `exam_category` (`category_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='考试配置表';
 
+-- 生成试卷表
+CREATE TABLE `exam_paper` (
+  `paper_id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '试卷ID',
+  `paper_name` varchar(100) NOT NULL COMMENT '试卷名称',
+  `config_id` bigint(20) NOT NULL COMMENT '考试配置ID',
+  `category_id` bigint(20) NOT NULL COMMENT '分类ID',
+  `total_questions` int(11) NOT NULL COMMENT '题目总数',
+  `total_score` int(11) NOT NULL COMMENT '总分',
+  `duration` int(11) NOT NULL COMMENT '考试时长(分钟)',
+  `usage_count` int(11) DEFAULT 0 COMMENT '使用次数',
+  `status` char(1) DEFAULT '1' COMMENT '状态（1启用 0停用）',
+  `create_dept` bigint(20) DEFAULT NULL COMMENT '创建部门',
+  `create_by` bigint(20) DEFAULT NULL COMMENT '创建者',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_by` bigint(20) DEFAULT NULL COMMENT '更新者',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `remark` varchar(500) DEFAULT '' COMMENT '备注',
+  PRIMARY KEY (`paper_id`),
+  KEY `idx_config_id` (`config_id`),
+  KEY `idx_category_id` (`category_id`),
+  KEY `idx_status` (`status`),
+  CONSTRAINT `fk_paper_config` FOREIGN KEY (`config_id`) REFERENCES `exam_config` (`config_id`),
+  CONSTRAINT `fk_paper_category` FOREIGN KEY (`category_id`) REFERENCES `exam_category` (`category_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='生成试卷表';
+
+-- 试卷题目关联表
+CREATE TABLE `exam_paper_question` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `paper_id` bigint(20) NOT NULL COMMENT '试卷ID',
+  `question_id` bigint(20) NOT NULL COMMENT '题目ID',
+  `question_order` int(11) NOT NULL COMMENT '题目顺序',
+  `question_score` int(11) NOT NULL COMMENT '该题分值',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_paper_question` (`paper_id`, `question_id`),
+  KEY `idx_paper_id` (`paper_id`),
+  KEY `idx_question_id` (`question_id`),
+  KEY `idx_question_order` (`question_order`),
+  CONSTRAINT `fk_pq_paper` FOREIGN KEY (`paper_id`) REFERENCES `exam_paper` (`paper_id`),
+  CONSTRAINT `fk_pq_question` FOREIGN KEY (`question_id`) REFERENCES `exam_question` (`question_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='试卷题目关联表';
+
 -- 考试记录表
 CREATE TABLE `exam_record` (
   `record_id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '记录ID',
   `user_id` bigint(20) NOT NULL COMMENT '用户ID',
-  `config_id` bigint(20) NOT NULL COMMENT '考试配置ID',
+  `paper_id` bigint(20) NOT NULL COMMENT '试卷ID',
   `exam_name` varchar(100) NOT NULL COMMENT '考试名称',
   `start_time` datetime NOT NULL COMMENT '开始时间',
   `end_time` datetime DEFAULT NULL COMMENT '结束时间',
@@ -148,11 +189,11 @@ CREATE TABLE `exam_record` (
   `remark` varchar(500) DEFAULT '' COMMENT '备注',
   PRIMARY KEY (`record_id`),
   KEY `idx_user_id` (`user_id`),
-  KEY `idx_config_id` (`config_id`),
+  KEY `idx_paper_id` (`paper_id`),
   KEY `idx_status` (`status`),
   KEY `idx_start_time` (`start_time`),
   CONSTRAINT `fk_record_user` FOREIGN KEY (`user_id`) REFERENCES `sys_user` (`user_id`),
-  CONSTRAINT `fk_record_config` FOREIGN KEY (`config_id`) REFERENCES `exam_config` (`config_id`)
+  CONSTRAINT `fk_record_paper` FOREIGN KEY (`paper_id`) REFERENCES `exam_paper` (`paper_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='考试记录表';
 
 -- 考试答题记录表
@@ -188,8 +229,8 @@ SELECT
     AVG(CASE WHEN er.status = 'completed' THEN er.score END) as avg_score,
     COUNT(CASE WHEN er.score >= er.pass_score THEN 1 END) as pass_count
 FROM exam_record er
-LEFT JOIN exam_config cfg ON er.config_id = cfg.config_id
-LEFT JOIN exam_category ec ON cfg.category_id = ec.category_id
+LEFT JOIN exam_paper ep ON er.paper_id = ep.paper_id
+LEFT JOIN exam_category ec ON ep.category_id = ec.category_id
 GROUP BY DATE(er.start_time), ec.category_name;
 
 -- 插入初始数据
@@ -218,7 +259,22 @@ INSERT INTO `exam_category` (`category_name`, `category_code`) VALUES
 ('心血管内科', 'CAT_03'),
 ('呼吸内科', 'CAT_04');
 
+-- 插入示例题目数据
+INSERT INTO `exam_question` (`question_type`, `question_content`, `question_options`, `correct_answer`, `category_id`, `difficulty`, `score`) VALUES
+('choice', '胃溃疡最常见的并发症是？', '["穿孔", "出血", "幽门梗阻", "癌变"]', '1', 1, 'medium', 2),
+('judgment', 'Hp感染是胃溃疡的主要病因之一', NULL, '正确', 1, 'easy', 1),
+('choice', '急性胃炎最常见的病因是？', '["饮食不当", "药物因素", "感染", "应激"]', '0', 1, 'medium', 2),
+('choice', '胆囊炎最典型的症状是？', '["右上腹痛", "恶心呕吐", "发热", "黄疸"]', '0', 2, 'medium', 2),
+('judgment', '胆结石患者都需要手术治疗', NULL, '错误', 2, 'easy', 1);
+
+-- 插入示例考试配置
+INSERT INTO `exam_config` (`config_name`, `category_id`, `duration`, `total_score`, `pass_score`, `choice_count`, `judgment_count`, `choice_score`, `judgment_score`) VALUES
+('消化内科理论考试', 1, 90, 100, 60, 40, 20, 2, 1),
+('肝胆外科专业考试', 2, 120, 100, 60, 35, 30, 2, 1);
+
 -- 创建索引优化查询性能
 CREATE INDEX `idx_exam_record_composite` ON `exam_record` (`user_id`, `status`, `start_time`);
 CREATE INDEX `idx_exam_answer_composite` ON `exam_answer` (`record_id`, `is_correct`);
 CREATE INDEX `idx_question_composite` ON `exam_question` (`category_id`, `difficulty`, `status`);
+CREATE INDEX `idx_paper_composite` ON `exam_paper` (`category_id`, `status`, `create_time`);
+

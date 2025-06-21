@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -11,30 +12,8 @@ import ExamPaperGenerator from './ExamPaperGenerator';
 import ExamPaperList from './ExamPaperList';
 
 const ExamConfigManager: React.FC = () => {
-  const [examConfigs, setExamConfigs] = useState<ExamConfig[]>([
-    {
-      id: '1',
-      name: '消化内科理论考试',
-      categories: ['消化内科'],
-      questionTypes: {
-        choice: { count: 40, score: 2 },
-        judgment: { count: 20, score: 1 }
-      },
-      duration: 90,
-      totalScore: 100
-    },
-    {
-      id: '2',
-      name: '肝胆外科专业考试',
-      categories: ['肝胆外科'],
-      questionTypes: {
-        choice: { count: 35, score: 2 },
-        judgment: { count: 30, score: 1 }
-      },
-      duration: 120,
-      totalScore: 100
-    }
-  ]);
+  const [examConfigs, setExamConfigs] = useState<ExamConfig[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const [newConfig, setNewConfig] = useState<Partial<ExamConfig>>({
     name: '',
@@ -50,6 +29,56 @@ const ExamConfigManager: React.FC = () => {
   const { toast } = useToast();
   const categories = ['消化内科', '肝胆外科', '心血管内科', '呼吸内科'];
 
+  // 模拟API调用 - 获取考试配置列表
+  const fetchExamConfigs = async () => {
+    setLoading(true);
+    try {
+      // 模拟API调用延迟
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const mockConfigs: ExamConfig[] = [
+        {
+          id: '1',
+          name: '消化内科理论考试',
+          categories: ['消化内科'],
+          questionTypes: {
+            choice: { count: 40, score: 2 },
+            judgment: { count: 20, score: 1 }
+          },
+          duration: 90,
+          totalScore: 100
+        },
+        {
+          id: '2',
+          name: '肝胆外科专业考试',
+          categories: ['肝胆外科'],
+          questionTypes: {
+            choice: { count: 35, score: 2 },
+            judgment: { count: 30, score: 1 }
+          },
+          duration: 120,
+          totalScore: 100
+        }
+      ];
+
+      setExamConfigs(mockConfigs);
+      console.log('考试配置列表加载成功');
+    } catch (error) {
+      console.error('获取考试配置失败:', error);
+      toast({
+        title: "加载失败",
+        description: "获取考试配置失败，请重试",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchExamConfigs();
+  }, []);
+
   const calculateTotalScore = (config: Partial<ExamConfig>) => {
     if (!config.questionTypes) return 0;
     const choiceTotal = config.questionTypes.choice.count * config.questionTypes.choice.score;
@@ -60,7 +89,8 @@ const ExamConfigManager: React.FC = () => {
   const [paperGeneratorOpen, setPaperGeneratorOpen] = useState(false);
   const [selectedConfigForPaper, setSelectedConfigForPaper] = useState<ExamConfig | null>(null);
 
-  const handleAddConfig = () => {
+  // 模拟API调用 - 添加考试配置
+  const handleAddConfig = async () => {
     if (!newConfig.name || !newConfig.categories?.length) {
       toast({
         title: "请填写完整信息",
@@ -80,41 +110,67 @@ const ExamConfigManager: React.FC = () => {
       return;
     }
 
-    const config: ExamConfig = {
-      id: Date.now().toString(),
-      name: newConfig.name,
-      categories: newConfig.categories,
-      questionTypes: newConfig.questionTypes!,
-      duration: newConfig.duration || 90,
-      totalScore: 100
-    };
+    try {
+      // 模拟API调用
+      console.log('创建考试配置:', newConfig);
+      await new Promise(resolve => setTimeout(resolve, 500));
 
-    setExamConfigs([...examConfigs, config]);
-    
-    // 重置表单
-    setNewConfig({
-      name: '',
-      categories: [],
-      questionTypes: {
-        choice: { count: 40, score: 2 },
-        judgment: { count: 20, score: 1 }
-      },
-      duration: 90,
-      totalScore: 100
-    });
+      const config: ExamConfig = {
+        id: Date.now().toString(),
+        name: newConfig.name,
+        categories: newConfig.categories,
+        questionTypes: newConfig.questionTypes!,
+        duration: newConfig.duration || 90,
+        totalScore: 100
+      };
 
-    toast({
-      title: "考试配置创建成功",
-      description: `已创建考试配置：${config.name}`
-    });
+      setExamConfigs([...examConfigs, config]);
+      
+      // 重置表单
+      setNewConfig({
+        name: '',
+        categories: [],
+        questionTypes: {
+          choice: { count: 40, score: 2 },
+          judgment: { count: 20, score: 1 }
+        },
+        duration: 90,
+        totalScore: 100
+      });
+
+      toast({
+        title: "考试配置创建成功",
+        description: `已创建考试配置：${config.name}`
+      });
+    } catch (error) {
+      console.error('创建考试配置失败:', error);
+      toast({
+        title: "创建失败",
+        description: "创建考试配置失败，请重试",
+        variant: "destructive"
+      });
+    }
   };
 
-  const handleDeleteConfig = (configId: string) => {
-    setExamConfigs(examConfigs.filter(config => config.id !== configId));
-    toast({
-      title: "配置删除成功",
-      description: "已删除考试配置"
-    });
+  // 模拟API调用 - 删除考试配置
+  const handleDeleteConfig = async (configId: string) => {
+    try {
+      console.log('删除考试配置:', configId);
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      setExamConfigs(examConfigs.filter(config => config.id !== configId));
+      toast({
+        title: "配置删除成功",
+        description: "已删除考试配置"
+      });
+    } catch (error) {
+      console.error('删除考试配置失败:', error);
+      toast({
+        title: "删除失败",
+        description: "删除考试配置失败，请重试",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleGeneratePaper = (config: ExamConfig) => {
@@ -123,7 +179,7 @@ const ExamConfigManager: React.FC = () => {
   };
 
   const handleEditConfig = (config: ExamConfig) => {
-    // TODO: Implement edit functionality
+    // TODO: 实现编辑功能
     toast({
       title: "编辑功能",
       description: "编辑功能正在开发中",
@@ -269,67 +325,73 @@ const ExamConfigManager: React.FC = () => {
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-gray-800">现有配置</h3>
               
-              {examConfigs.map(config => (
-                <Card key={config.id} className="p-6">
-                  <div className="flex justify-between items-start mb-4">
-                    <h4 className="text-lg font-medium text-gray-800">{config.name}</h4>
-                    <Button 
-                      size="sm" 
-                      variant="destructive" 
-                      onClick={() => handleDeleteConfig(config.id)}
-                    >
-                      删除
-                    </Button>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">考试科室：</span>
-                      <span>{config.categories.join(', ')}</span>
-                    </div>
-                    
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">考试时长：</span>
-                      <span>{config.duration}分钟</span>
-                    </div>
-                    
-                    <div className="bg-gray-50 p-3 rounded">
-                      <h5 className="text-sm font-medium text-gray-800 mb-2">题型配置：</h5>
-                      <div className="space-y-1 text-sm">
-                        <div className="flex justify-between">
-                          <span>选择题：</span>
-                          <span>{config.questionTypes.choice.count}题 × {config.questionTypes.choice.score}分 = {config.questionTypes.choice.count * config.questionTypes.choice.score}分</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>判断题：</span>
-                          <span>{config.questionTypes.judgment.count}题 × {config.questionTypes.judgment.score}分 = {config.questionTypes.judgment.count * config.questionTypes.judgment.score}分</span>
-                        </div>
-                        <hr className="my-2" />
-                        <div className="flex justify-between font-medium">
-                          <span>总计：</span>
-                          <span>{config.totalScore}分</span>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="flex space-x-2">
+              {loading ? (
+                <div className="flex justify-center items-center py-8">
+                  <span>加载中...</span>
+                </div>
+              ) : (
+                examConfigs.map(config => (
+                  <Card key={config.id} className="p-6">
+                    <div className="flex justify-between items-start mb-4">
+                      <h4 className="text-lg font-medium text-gray-800">{config.name}</h4>
                       <Button 
                         size="sm" 
-                        variant="outline"
-                        onClick={() => handleEditConfig(config)}
+                        variant="destructive" 
+                        onClick={() => handleDeleteConfig(config.id)}
                       >
-                        编辑
-                      </Button>
-                      <Button 
-                        size="sm"
-                        onClick={() => handleGeneratePaper(config)}
-                      >
-                        生成试卷
+                        删除
                       </Button>
                     </div>
-                  </div>
-                </Card>
-              ))}
+                    
+                    <div className="space-y-3">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">考试科室：</span>
+                        <span>{config.categories.join(', ')}</span>
+                      </div>
+                      
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">考试时长：</span>
+                        <span>{config.duration}分钟</span>
+                      </div>
+                      
+                      <div className="bg-gray-50 p-3 rounded">
+                        <h5 className="text-sm font-medium text-gray-800 mb-2">题型配置：</h5>
+                        <div className="space-y-1 text-sm">
+                          <div className="flex justify-between">
+                            <span>选择题：</span>
+                            <span>{config.questionTypes.choice.count}题 × {config.questionTypes.choice.score}分 = {config.questionTypes.choice.count * config.questionTypes.choice.score}分</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>判断题：</span>
+                            <span>{config.questionTypes.judgment.count}题 × {config.questionTypes.judgment.score}分 = {config.questionTypes.judgment.count * config.questionTypes.judgment.score}分</span>
+                          </div>
+                          <hr className="my-2" />
+                          <div className="flex justify-between font-medium">
+                            <span>总计：</span>
+                            <span>{config.totalScore}分</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="flex space-x-2">
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => handleEditConfig(config)}
+                        >
+                          编辑
+                        </Button>
+                        <Button 
+                          size="sm"
+                          onClick={() => handleGeneratePaper(config)}
+                        >
+                          生成试卷
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                ))
+              )}
             </div>
           </div>
         </TabsContent>
@@ -353,3 +415,4 @@ const ExamConfigManager: React.FC = () => {
 };
 
 export default ExamConfigManager;
+
