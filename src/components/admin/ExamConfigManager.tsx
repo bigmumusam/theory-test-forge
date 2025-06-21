@@ -48,7 +48,6 @@ const ExamConfigManager: React.FC = () => {
   });
 
   const { toast } = useToast();
-
   const categories = ['消化内科', '肝胆外科', '心血管内科', '呼吸内科'];
 
   const calculateTotalScore = (config: Partial<ExamConfig>) => {
@@ -347,6 +346,7 @@ const ExamConfigManager: React.FC = () => {
           setPaperGeneratorOpen(false);
           setSelectedConfigForPaper(null);
         }}
+        config={selectedConfigForPaper || undefined}
       />
     </div>
   );
