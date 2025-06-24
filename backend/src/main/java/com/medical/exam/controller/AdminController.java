@@ -1,10 +1,9 @@
-
 package com.medical.exam.controller;
 
 import com.medical.exam.common.result.Result;
-import com.medical.exam.dto.UserCreateRequest;
-import com.medical.exam.dto.UserUpdateRequest;
+import com.medical.exam.dto.*;
 import com.medical.exam.service.AdminService;
+import com.medical.exam.service.AuthService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -20,69 +19,56 @@ public class AdminController {
 
     @Autowired
     private AdminService adminService;
+    @Autowired
+    private AuthService authService;
 
     // 考试结果管理
-    @GetMapping("/exam-results")
-    public Result<Map<String, Object>> getExamResults(
-            @RequestParam(required = false) String category,
-            @RequestParam(required = false) String status,
-            @RequestParam(required = false) String keyword,
-            @RequestParam(defaultValue = "1") Integer page,
-            @RequestParam(defaultValue = "10") Integer size,
-            Authentication auth) {
-        Map<String, Object> results = adminService.getExamResults(category, status, keyword, page, size);
+    @PostMapping("/exam-results")
+    public Result<?> getExamResults(@RequestBody ExamResultQueryDTO request) {
+        Map<String, Object> results = adminService.getExamResults(
+            request.getCategory(),
+            request.getStatus(),
+            request.getKeyword(),
+            request.getPageNum(),
+            request.getPageSize()
+        );
         return Result.success(results);
     }
 
     @GetMapping("/exam-results/{id}")
-    public Result<Map<String, Object>> getExamResultDetail(@PathVariable String id, Authentication auth) {
+    public Result<?> getExamResultDetail(@PathVariable String id, Authentication auth) {
         Map<String, Object> result = adminService.getExamResultDetail(id);
         return Result.success(result);
     }
 
     @PostMapping("/exam-results/{id}/retake")
-    public Result<Void> arrangeRetakeExam(@PathVariable String id, Authentication auth) {
+    public Result<?> arrangeRetakeExam(@PathVariable String id, Authentication auth) {
         adminService.arrangeRetakeExam(id, Long.valueOf(auth.getName()));
         return Result.success("重新考试安排成功");
     }
 
     @PostMapping("/exam-results/batch-retake")
-    public Result<Void> batchArrangeRetakeExam(@RequestBody Map<String, Object> request, Authentication auth) {
+    public Result<?> batchArrangeRetakeExam(@RequestBody Map<String, Object> request, Authentication auth) {
         adminService.batchArrangeRetakeExam(request, Long.valueOf(auth.getName()));
         return Result.success("批量重新考试安排成功");
     }
 
     // 题目管理
-    @GetMapping("/questions")
-    public Result<Map<String, Object>> getQuestions(
-            @RequestParam(required = false) String category,
-            @RequestParam(required = false) String difficulty,
-            @RequestParam(required = false) String keyword,
-            @RequestParam(defaultValue = "1") Integer page,
-            @RequestParam(defaultValue = "10") Integer size,
-            Authentication auth) {
-        Map<String, Object> questions = adminService.getQuestions(category, difficulty, keyword, page, size);
-        return Result.success(questions);
-    }
-
-    @PostMapping("/questions")
-    public Result<Void> addQuestion(@Valid @RequestBody Map<String, Object> request, 
-                                   Authentication auth) {
+    @PostMapping("/questions/add")
+    public Result<?> addQuestion(@Valid @RequestBody Map<String, Object> request, Authentication auth) {
         adminService.addQuestion(request, Long.valueOf(auth.getName()));
         return Result.success("题目添加成功");
     }
 
-    @PutMapping("/questions/{id}")
-    public Result<Void> updateQuestion(@PathVariable String id, 
-                                      @Valid @RequestBody Map<String, Object> request,
-                                      Authentication auth) {
-        adminService.updateQuestion(id, request, Long.valueOf(auth.getName()));
+    @PostMapping("/questions/update")
+    public Result<?> updateQuestion(@RequestBody Map<String, Object> request, Authentication auth) {
+        adminService.updateQuestion(request.get("id").toString(), request, Long.valueOf(auth.getName()));
         return Result.success("题目更新成功");
     }
 
-    @DeleteMapping("/questions/{id}")
-    public Result<Void> deleteQuestion(@PathVariable String id, Authentication auth) {
-        adminService.deleteQuestion(id);
+    @PostMapping("/questions/delete")
+    public Result<?> deleteQuestion(@RequestBody Map<String, Object> request, Authentication auth) {
+        adminService.deleteQuestion(request.get("id").toString());
         return Result.success("题目删除成功");
     }
 
@@ -94,179 +80,80 @@ public class AdminController {
     }
 
     @PostMapping("/questions/batch-delete")
-    public Result<Void> batchDeleteQuestions(@RequestBody Map<String, Object> request, Authentication auth) {
+    public Result<?> batchDeleteQuestions(@RequestBody Map<String, Object> request, Authentication auth) {
         adminService.batchDeleteQuestions(request);
         return Result.success("批量删除成功");
     }
 
-    // 用户管理
-    @GetMapping("/users")
-    public Result<Map<String, Object>> getUsers(
-            @RequestParam(required = false) String role,
-            @RequestParam(required = false) String department,
-            @RequestParam(required = false) String keyword,
-            @RequestParam(defaultValue = "1") Integer page,
-            @RequestParam(defaultValue = "10") Integer size,
-            Authentication auth) {
-        Map<String, Object> users = adminService.getUsers(role, department, keyword, page, size);
-        return Result.success(users);
-    }
-
-    @PostMapping("/users")
-    public Result<Void> addUser(@Valid @RequestBody UserCreateRequest request, 
-                               Authentication auth) {
-        adminService.addUser(request, Long.valueOf(auth.getName()));
-        return Result.success("用户添加成功");
-    }
-
-    @PutMapping("/users/{id}")
-    public Result<Void> updateUser(@PathVariable String id, 
-                                  @Valid @RequestBody UserUpdateRequest request,
-                                  Authentication auth) {
-        adminService.updateUser(id, request, Long.valueOf(auth.getName()));
-        return Result.success("用户更新成功");
-    }
-
-    @DeleteMapping("/users/{id}")
-    public Result<Void> deleteUser(@PathVariable String id, Authentication auth) {
-        adminService.deleteUser(id);
-        return Result.success("用户删除成功");
-    }
-
-    @PostMapping("/users/import")
-    public Result<Map<String, Object>> importUsers(@RequestParam("file") MultipartFile file, 
-                                                   Authentication auth) {
-        Map<String, Object> result = adminService.importUsers(file, Long.valueOf(auth.getName()));
-        return Result.success(result);
-    }
-
-    @PostMapping("/users/batch-delete")
-    public Result<Void> batchDeleteUsers(@RequestBody Map<String, Object> request, Authentication auth) {
-        adminService.batchDeleteUsers(request);
-        return Result.success("批量删除成功");
-    }
-
-    // 角色管理
-    @GetMapping("/roles")
-    public Result<Map<String, Object>> getRoles(
-            @RequestParam(required = false) String status,
-            @RequestParam(required = false) String keyword,
-            @RequestParam(defaultValue = "1") Integer page,
-            @RequestParam(defaultValue = "10") Integer size,
-            Authentication auth) {
-        Map<String, Object> roles = adminService.getRoles(status, keyword, page, size);
-        return Result.success(roles);
-    }
-
-    @PostMapping("/roles")
-    public Result<Void> addRole(@Valid @RequestBody Map<String, Object> request, 
-                               Authentication auth) {
-        adminService.addRole(request, Long.valueOf(auth.getName()));
-        return Result.success("角色添加成功");
-    }
-
-    @PutMapping("/roles/{id}")
-    public Result<Void> updateRole(@PathVariable String id, 
-                                  @Valid @RequestBody Map<String, Object> request,
-                                  Authentication auth) {
-        adminService.updateRole(id, request, Long.valueOf(auth.getName()));
-        return Result.success("角色更新成功");
-    }
-
-    @DeleteMapping("/roles/{id}")
-    public Result<Void> deleteRole(@PathVariable String id, Authentication auth) {
-        adminService.deleteRole(id);
-        return Result.success("角色删除成功");
-    }
 
     // 科室/分类管理
-    @GetMapping("/departments")
-    public Result<List<Map<String, Object>>> getDepartments(Authentication auth) {
-        List<Map<String, Object>> departments = adminService.getDepartments();
-        return Result.success(departments);
-    }
-
     @PostMapping("/departments")
-    public Result<Void> addDepartment(@Valid @RequestBody Map<String, Object> request, 
+    public Result<?> addDepartment(@RequestBody Map<String, Object> request, 
                                      Authentication auth) {
         adminService.addDepartment(request, Long.valueOf(auth.getName()));
         return Result.success("科室添加成功");
     }
 
-    @GetMapping("/categories")
-    public Result<List<Map<String, Object>>> getCategories(Authentication auth) {
-        List<Map<String, Object>> categories = adminService.getCategories();
-        return Result.success(categories);
-    }
-
     @PostMapping("/categories")
-    public Result<Void> addCategory(@Valid @RequestBody Map<String, Object> request, 
+    public Result<?> addCategory(@RequestBody Map<String, Object> request, 
                                    Authentication auth) {
         adminService.addCategory(request, Long.valueOf(auth.getName()));
         return Result.success("分类添加成功");
     }
 
-    // 考试配置管理
-    @GetMapping("/exam-configs")
-    public Result<Map<String, Object>> getExamConfigs(
-            @RequestParam(required = false) String category,
-            @RequestParam(required = false) String status,
-            @RequestParam(defaultValue = "1") Integer page,
-            @RequestParam(defaultValue = "10") Integer size,
-            Authentication auth) {
-        Map<String, Object> configs = adminService.getExamConfigs(category, status, page, size);
-        return Result.success(configs);
+    @PostMapping("/departments/list")
+    public Result<List<Map<String, Object>>> getDepartments(@RequestBody DepartmentQueryDTO request) {
+        List<Map<String, Object>> departments = adminService.getDepartments(request);
+        return Result.success(departments);
     }
 
-    @PostMapping("/exam-configs")
-    public Result<Void> addExamConfig(@Valid @RequestBody Map<String, Object> request, 
-                                     Authentication auth) {
+    // 考试配置管理
+    @PostMapping("/exam-configs/add")
+    public Result<?> addExamConfig(@RequestBody Map<String, Object> request, Authentication auth) {
         adminService.addExamConfig(request, Long.valueOf(auth.getName()));
         return Result.success("考试配置添加成功");
     }
 
-    @PutMapping("/exam-configs/{id}")
-    public Result<Void> updateExamConfig(@PathVariable String id,
-                                        @Valid @RequestBody Map<String, Object> request,
-                                        Authentication auth) {
-        adminService.updateExamConfig(id, request, Long.valueOf(auth.getName()));
+    @PostMapping("/exam-configs/update")
+    public Result<?> updateExamConfig(@RequestBody Map<String, Object> request, Authentication auth) {
+        adminService.updateExamConfig(request.get("id").toString(), request, Long.valueOf(auth.getName()));
         return Result.success("考试配置更新成功");
     }
 
-    @DeleteMapping("/exam-configs/{id}")
-    public Result<Void> deleteExamConfig(@PathVariable String id, Authentication auth) {
-        adminService.deleteExamConfig(id);
+    @PostMapping("/exam-configs/delete")
+    public Result<?> deleteExamConfig(@RequestBody Map<String, Object> request, Authentication auth) {
+        adminService.deleteExamConfig(request.get("id").toString());
         return Result.success("考试配置删除成功");
     }
 
     // 试卷生成和管理
     @PostMapping("/generate-paper")
-    public Result<Map<String, Object>> generateExamPaper(@Valid @RequestBody Map<String, Object> request, 
+    public Result<Map<String, Object>> generateExamPaper(@RequestBody Map<String, Object> request, 
                                                          Authentication auth) {
         Map<String, Object> paper = adminService.generateExamPaper(request, Long.valueOf(auth.getName()));
         return Result.success("试卷生成成功", paper);
     }
 
-    @GetMapping("/generated-papers")
-    public Result<Map<String, Object>> getGeneratedPapers(
-            @RequestParam(required = false) String category,
-            @RequestParam(required = false) String status,
-            @RequestParam(defaultValue = "1") Integer page,
-            @RequestParam(defaultValue = "10") Integer size,
-            Authentication auth) {
-        Map<String, Object> papers = adminService.getGeneratedPapers(category, status, page, size);
+    @PostMapping("/generated-papers/list")
+    public Result<Map<String, Object>> getGeneratedPapers(@RequestBody ExamPaperQueryDTO request) {
+        Map<String, Object> papers = adminService.getGeneratedPapers(
+            request.getCategory(),
+            request.getStatus(),
+            request.getPageNum(),
+            request.getPageSize()
+        );
         return Result.success(papers);
     }
 
-    @GetMapping("/generated-papers/{id}")
+    @PostMapping("/generated-papers/{id}")
     public Result<Map<String, Object>> getGeneratedPaperDetail(@PathVariable String id, Authentication auth) {
         Map<String, Object> paper = adminService.getGeneratedPaperDetail(id);
         return Result.success(paper);
     }
 
-    @DeleteMapping("/generated-papers/{id}")
-    public Result<Void> deleteGeneratedPaper(@PathVariable String id, Authentication auth) {
-        adminService.deleteGeneratedPaper(id);
+    @PostMapping("/generated-papers/delete")
+    public Result<?> deleteGeneratedPaper(@RequestBody Map<String, Object> request, Authentication auth) {
+        adminService.deleteGeneratedPaper(request.get("id").toString());
         return Result.success("试卷删除成功");
     }
 
@@ -279,36 +166,35 @@ public class AdminController {
         return Result.success("题目替换成功", result);
     }
 
-    @GetMapping("/available-questions")
-    public Result<Map<String, Object>> getAvailableQuestions(
-            @RequestParam String category,
-            @RequestParam String type,
-            @RequestParam(required = false) String difficulty,
-            @RequestParam(required = false) String excludeIds,
-            @RequestParam(defaultValue = "1") Integer page,
-            @RequestParam(defaultValue = "20") Integer size,
-            Authentication auth) {
-        Map<String, Object> questions = adminService.getAvailableQuestions(category, type, difficulty, excludeIds, page, size);
+    @PostMapping("/available-questions/list")
+    public Result<Map<String, Object>> getAvailableQuestions(@RequestBody AvailableQuestionQueryDTO request) {
+        Map<String, Object> questions = adminService.getAvailableQuestions(
+            request.getCategory(),
+            request.getType(),
+            request.getDifficulty(),
+            request.getExcludeIds(),
+            request.getPageNum(),
+            request.getPageSize()
+        );
         return Result.success(questions);
     }
 
     // 统计分析
-    @GetMapping("/statistics/dashboard")
+    @PostMapping("/statistics/dashboard")
     public Result<Map<String, Object>> getDashboardStatistics(Authentication auth) {
         Map<String, Object> statistics = adminService.getDashboardStatistics();
         return Result.success(statistics);
     }
 
-    @GetMapping("/statistics/exam-trends")
-    public Result<Map<String, Object>> getExamTrends(
-            @RequestParam(required = false) String startDate,
-            @RequestParam(required = false) String endDate,
-            Authentication auth) {
+    @PostMapping("/statistics/exam-trends")
+    public Result<Map<String, Object>> getExamTrends(@RequestBody Map<String, Object> request) {
+        String startDate = (String) request.get("startDate");
+        String endDate = (String) request.get("endDate");
         Map<String, Object> trends = adminService.getExamTrends(startDate, endDate);
         return Result.success(trends);
     }
 
-    @GetMapping("/statistics/category-performance")
+    @PostMapping("/statistics/category-performance")
     public Result<Map<String, Object>> getCategoryPerformance(Authentication auth) {
         Map<String, Object> performance = adminService.getCategoryPerformance();
         return Result.success(performance);

@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import LoginForm from '../components/auth/LoginForm';
 import AdminDashboard from '../components/admin/AdminDashboard';
 import StudentDashboard from '../components/student/StudentDashboard';
@@ -9,12 +8,24 @@ import { Card } from '@/components/ui/card';
 const Index = () => {
   const [user, setUser] = useState<User | null>(null);
 
+  // 自动恢复登录态
+  useEffect(() => {
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      try {
+        setUser(JSON.parse(userStr));
+      } catch {}
+    }
+  }, []);
+
   const handleLogin = (userData: User) => {
     setUser(userData);
   };
 
   const handleLogout = () => {
     setUser(null);
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
   };
 
   if (!user) {

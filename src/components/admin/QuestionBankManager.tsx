@@ -86,6 +86,9 @@ const QuestionBankManager: React.FC = () => {
 
   const [selectedQuestions, setSelectedQuestions] = useState<string[]>([]);
 
+  const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
+  const [addCategoryForm, setAddCategoryForm] = useState({ name: '', description: '' });
+
   const filteredQuestions = questions.filter(q =>
     (selectedCategory === 'all' || q.category === selectedCategory) &&
     (!searchKeyword || q.content.includes(searchKeyword)) &&
@@ -123,22 +126,24 @@ const QuestionBankManager: React.FC = () => {
   };
 
   const handleAddCategory = () => {
-    const name = prompt('请输入科室名称：');
-    const description = prompt('请输入科室描述：');
-    
-    if (name && description) {
-      const newCategory: Category = {
-        id: Date.now().toString(),
-        name,
-        description,
-        questionCount: 0
-      };
-      setCategories([...categories, newCategory]);
-      toast({
-        title: "科室添加成功",
-        description: `已添加科室：${name}`
-      });
+    setAddCategoryForm({ name: '', description: '' });
+    setIsAddCategoryOpen(true);
+  };
+
+  const handleSaveAddCategory = () => {
+    if (!addCategoryForm.name.trim() || !addCategoryForm.description.trim()) {
+      toast({ title: '请填写完整信息', variant: 'destructive' });
+      return;
     }
+    const newCategory = {
+      id: Date.now().toString(),
+      name: addCategoryForm.name,
+      description: addCategoryForm.description,
+      questionCount: 0
+    };
+    setCategories([...categories, newCategory]);
+    setIsAddCategoryOpen(false);
+    toast({ title: '科室添加成功', description: `已添加科室：${addCategoryForm.name}` });
   };
 
   const handleAddQuestion = () => {
@@ -763,6 +768,25 @@ const QuestionBankManager: React.FC = () => {
               setEditingCategory(null);
               toast({ title: '科室信息已更新' });
             }} className="w-full">保存</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isAddCategoryOpen} onOpenChange={setIsAddCategoryOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>添加科室</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>科室名称</Label>
+              <Input value={addCategoryForm.name} onChange={e => setAddCategoryForm(f => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div>
+              <Label>科室描述</Label>
+              <Textarea value={addCategoryForm.description} onChange={e => setAddCategoryForm(f => ({ ...f, description: e.target.value }))} />
+            </div>
+            <Button onClick={handleSaveAddCategory} className="w-full">保存</Button>
           </div>
         </DialogContent>
       </Dialog>

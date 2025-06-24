@@ -1,8 +1,6 @@
-
 package com.medical.exam.service;
 
-import com.medical.exam.dto.UserCreateRequest;
-import com.medical.exam.dto.UserUpdateRequest;
+import com.medical.exam.dto.DepartmentQueryDTO;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -146,114 +144,12 @@ public class AdminService {
         System.out.println("批量删除题目，数量: " + questionIds.size());
     }
 
-    // 用户管理
-    public Map<String, Object> getUsers(String role, String department, String keyword, Integer page, Integer size) {
-        List<Map<String, Object>> users = new ArrayList<>();
-        
-        Map<String, Object> user1 = new HashMap<>();
-        user1.put("id", "1");
-        user1.put("name", "管理员");
-        user1.put("idNumber", "110101199001011234");
-        user1.put("role", "admin");
-        user1.put("department", "系统管理");
-        user1.put("status", "1");
-        user1.put("createTime", "2024-01-15 10:00:00");
-        users.add(user1);
 
-        Map<String, Object> user2 = new HashMap<>();
-        user2.put("id", "2");
-        user2.put("name", "张医生");
-        user2.put("idNumber", "110101199001011111");
-        user2.put("role", "student");
-        user2.put("department", "消化内科");
-        user2.put("status", "1");
-        user2.put("createTime", "2024-01-15 10:30:00");
-        users.add(user2);
 
-        Map<String, Object> response = new HashMap<>();
-        response.put("data", users);
-        response.put("total", users.size());
-        response.put("page", page);
-        response.put("size", size);
-        
-        return response;
-    }
 
-    public void addUser(UserCreateRequest request, Long userId) {
-        System.out.println("添加用户: " + request.getName() + ", 操作用户: " + userId);
-    }
-
-    public void updateUser(String id, UserUpdateRequest request, Long userId) {
-        System.out.println("更新用户ID: " + id + ", 姓名: " + request.getName() + ", 操作用户: " + userId);
-    }
-
-    public void deleteUser(String id) {
-        System.out.println("删除用户ID: " + id);
-    }
-
-    public Map<String, Object> importUsers(MultipartFile file, Long userId) {
-        System.out.println("导入用户文件: " + file.getOriginalFilename() + ", 操作用户: " + userId);
-        
-        Map<String, Object> result = new HashMap<>();
-        result.put("successCount", 5);
-        result.put("failCount", 0);
-        result.put("total", 5);
-        
-        return result;
-    }
-
-    public void batchDeleteUsers(Map<String, Object> request) {
-        List<String> userIds = (List<String>) request.get("userIds");
-        System.out.println("批量删除用户，数量: " + userIds.size());
-    }
-
-    // 角色管理
-    public Map<String, Object> getRoles(String status, String keyword, Integer page, Integer size) {
-        List<Map<String, Object>> roles = new ArrayList<>();
-        
-        Map<String, Object> role1 = new HashMap<>();
-        role1.put("id", "1");
-        role1.put("roleName", "系统管理员");
-        role1.put("roleKey", "admin");
-        role1.put("roleSort", 1);
-        role1.put("status", "1");
-        role1.put("remark", "超级管理员，拥有所有权限");
-        role1.put("createTime", "2024-01-15 10:00:00");
-        roles.add(role1);
-
-        Map<String, Object> role2 = new HashMap<>();
-        role2.put("id", "2");
-        role2.put("roleName", "普通考生");
-        role2.put("roleKey", "student");
-        role2.put("roleSort", 2);
-        role2.put("status", "1");
-        role2.put("remark", "普通考生，只能参加考试");
-        role2.put("createTime", "2024-01-15 10:30:00");
-        roles.add(role2);
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("data", roles);
-        response.put("total", roles.size());
-        response.put("page", page);
-        response.put("size", size);
-        
-        return response;
-    }
-
-    public void addRole(Map<String, Object> request, Long userId) {
-        System.out.println("添加角色: " + request + ", 操作用户: " + userId);
-    }
-
-    public void updateRole(String id, Map<String, Object> request, Long userId) {
-        System.out.println("更新角色ID: " + id + ", 数据: " + request + ", 操作用户: " + userId);
-    }
-
-    public void deleteRole(String id) {
-        System.out.println("删除角色ID: " + id);
-    }
 
     // 科室/分类管理
-    public List<Map<String, Object>> getDepartments() {
+    public List<Map<String, Object>> getDepartments(DepartmentQueryDTO request) {
         List<Map<String, Object>> departments = new ArrayList<>();
         
         Map<String, Object> dept1 = new HashMap<>();
@@ -336,25 +232,51 @@ public class AdminService {
         return paper;
     }
 
-    public Map<String, Object> getGeneratedPapers(Integer page, Integer size) {
-        List<Map<String, Object>> papers = new ArrayList<>();
-        
-        Map<String, Object> paper1 = new HashMap<>();
-        paper1.put("id", "1");
-        paper1.put("name", "消化内科理论考试");
-        paper1.put("category", "消化内科");
-        paper1.put("questionCount", 50);
-        paper1.put("totalScore", 100);
-        paper1.put("generateTime", "2024-01-15 10:00:00");
-        papers.add(paper1);
+    public Map<String, Object> getGeneratedPapers(String category, String status, Integer page, Integer size) {
+        // 示例实现
+        Map<String, Object> result = new HashMap<>();
+        result.put("data", Collections.emptyList());
+        result.put("total", 0);
+        result.put("page", page);
+        result.put("size", size);
+        return result;
+    }
 
-        Map<String, Object> response = new HashMap<>();
-        response.put("data", papers);
-        response.put("total", papers.size());
-        response.put("page", page);
-        response.put("size", size);
-        
-        return response;
+    public Map<String, Object> getGeneratedPaperDetail(String id) {
+        // 示例实现
+        Map<String, Object> paper = new HashMap<>();
+        paper.put("id", id);
+        paper.put("name", "示例试卷");
+        paper.put("category", "消化内科");
+        paper.put("questionCount", 50);
+        paper.put("totalScore", 100);
+        paper.put("generateTime", "2024-01-15 10:00:00");
+        return paper;
+    }
+
+    public void deleteGeneratedPaper(String id) {
+        // 示例实现
+        System.out.println("删除试卷ID: " + id);
+    }
+
+    public Map<String, Object> replaceQuestion(String paperId, String questionId, Map<String, Object> request, Long userId) {
+        // 示例实现
+        Map<String, Object> result = new HashMap<>();
+        result.put("paperId", paperId);
+        result.put("oldQuestionId", questionId);
+        result.put("newQuestionId", request.get("newQuestionId"));
+        result.put("status", "replaced");
+        return result;
+    }
+
+    public Map<String, Object> getAvailableQuestions(String category, String type, String difficulty, String excludeIds, Integer page, Integer size) {
+        // 示例实现
+        Map<String, Object> result = new HashMap<>();
+        result.put("data", Collections.emptyList());
+        result.put("total", 0);
+        result.put("page", page);
+        result.put("size", size);
+        return result;
     }
 
     // 统计分析
@@ -414,5 +336,11 @@ public class AdminService {
         
         performance.put("data", data);
         return performance;
+    }
+
+    public void updateExamConfig(String id, Map<String, Object> request, Long aLong) {
+    }
+
+    public void deleteExamConfig(String id) {
     }
 }

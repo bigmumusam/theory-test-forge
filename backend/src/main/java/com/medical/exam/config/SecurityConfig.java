@@ -3,7 +3,7 @@ package com.medical.exam.config;
 
 import com.medical.exam.security.JwtAuthenticationEntryPoint;
 import com.medical.exam.security.JwtAuthenticationFilter;
-import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -21,10 +21,10 @@ import java.util.Arrays;
 @EnableWebSecurity
 public class SecurityConfig {
 
-    @Autowired
+    @Resource
     private JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
 
-    @Autowired
+    @Resource
     private JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @Bean

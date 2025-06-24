@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -11,6 +10,7 @@ import { Trash2, Edit, Plus, Search } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Pagination, PaginationContent, PaginationItem, PaginationLink } from '@/components/ui/pagination';
 
 const RoleManager = () => {
   const { toast } = useToast();
@@ -55,12 +55,22 @@ const RoleManager = () => {
     status: '1',
     remark: ''
   });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
 
   const filteredRoles = roles.filter(role => {
     const matchesSearch = role.roleName.includes(searchKeyword) || role.roleKey.includes(searchKeyword);
     const matchesStatus = selectedStatus === 'all' || role.status === selectedStatus;
     return matchesSearch && matchesStatus;
   });
+
+  const paginatedRoles = filteredRoles.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  React.useEffect(() => {
+    setTotalPages(Math.ceil(filteredRoles.length / pageSize) || 1);
+    if (currentPage > Math.ceil(filteredRoles.length / pageSize)) setCurrentPage(1);
+  }, [filteredRoles.length, pageSize]);
 
   const handleAddRole = () => {
     setEditingRole(null);
@@ -270,7 +280,7 @@ const RoleManager = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredRoles.map(role => (
+              {paginatedRoles.map(role => (
                 <TableRow key={role.id}>
                   <TableCell className="font-medium">{role.roleName}</TableCell>
                   <TableCell>{role.roleKey}</TableCell>
@@ -313,6 +323,41 @@ const RoleManager = () => {
           </div>
         )}
       </Card>
+
+      <div className="mt-6 flex flex-row justify-between items-center flex-nowrap gap-4">
+        <p className="text-sm text-gray-600 whitespace-nowrap">
+          显示 {(currentPage - 1) * pageSize + 1} 到 {Math.min(currentPage * pageSize, filteredRoles.length)} 条，共 {filteredRoles.length} 条记录
+        </p>
+        <Pagination>
+          <PaginationContent>
+            <PaginationItem>
+              <button
+                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                className={"text-sm px-3 py-1 rounded border mr-1 " + (currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer')}
+                disabled={currentPage === 1}
+              >上一页</button>
+            </PaginationItem>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+              <PaginationItem key={page}>
+                <PaginationLink
+                  onClick={() => setCurrentPage(page)}
+                  isActive={currentPage === page}
+                  className="text-sm cursor-pointer"
+                >
+                  {page}
+                </PaginationLink>
+              </PaginationItem>
+            ))}
+            <PaginationItem>
+              <button
+                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                className={"text-sm px-3 py-1 rounded border ml-1 " + (currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer')}
+                disabled={currentPage === totalPages}
+              >下一页</button>
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
+      </div>
     </div>
   );
 };

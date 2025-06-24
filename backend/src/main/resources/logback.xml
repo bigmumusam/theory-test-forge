@@ -1,0 +1,42 @@
+<configuration>
+    <!-- 定义日志文件的保存路径 -->
+    <property name="LOG_PATH" value="/project/backend/logs" />
+    <property name="LOG_FILE_NAME" value="app.log" />
+
+    <!-- 控制台日志输出格式 -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 文件日志输出格式 -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/${LOG_FILE_NAME}</file>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <!-- 每天生成一个新的日志文件 -->
+            <fileNamePattern>${LOG_PATH}/%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <!-- 日志文件保留天数 -->
+            <maxHistory>10</maxHistory>
+            <!-- 单个日志文件最大大小 -->
+            <timeBasedFileNamingAndTriggeringPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
+                <maxFileSize>50MB</maxFileSize>
+            </timeBasedFileNamingAndTriggeringPolicy>
+        </rollingPolicy>
+    </appender>
+
+    <!-- 根日志级别设置为 INFO -->
+    <root level="info">
+        <appender-ref ref="STDOUT" />
+        <appender-ref ref="FILE" />
+    </root>
+
+    <!-- 可以为特定的日志记录器设置不同的日志级别 -->
+    <logger name="com.example" level="debug" additivity="false">
+        <appender-ref ref="STDOUT" />
+        <appender-ref ref="FILE" />
+    </logger>
+</configuration>

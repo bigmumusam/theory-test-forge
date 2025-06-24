@@ -1,4 +1,3 @@
-
 package com.medical.exam.controller;
 
 import com.medical.exam.common.result.Result;
@@ -12,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/exam")
@@ -20,9 +20,10 @@ public class ExamController {
     @Autowired
     private ExamService examService;
 
-    @GetMapping("/available")
-    public Result<List<ExamPaperResponse>> getAvailableExams(Authentication auth) {
-        List<ExamPaperResponse> exams = examService.getAvailableExams(Long.valueOf(auth.getName()));
+    @PostMapping("/available")
+    public Result<List<ExamPaperResponse>> getAvailableExams(@RequestBody Map<String, Object> request) {
+        Long userId = Long.valueOf(request.get("userId").toString());
+        List<ExamPaperResponse> exams = examService.getAvailableExams(userId);
         return Result.success(exams);
     }
 
@@ -34,7 +35,7 @@ public class ExamController {
     }
 
     @PostMapping("/submit")
-    public Result<Void> submitExam(@Valid @RequestBody SubmitExamRequest request, 
+    public Result<?> submitExam(@Valid @RequestBody SubmitExamRequest request, 
                                    Authentication auth) {
         examService.submitExam(request, Long.valueOf(auth.getName()));
         return Result.success("考试提交成功");

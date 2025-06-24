@@ -36,7 +36,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             
             <div className="flex items-center space-x-4">
               <div className="text-right">
-                <p className="text-sm font-medium text-gray-800">{user.name}</p>
+                <p className="text-sm font-medium text-gray-800">{user.nameName}</p>
                 <p className="text-xs text-gray-600">{user.department}</p>
               </div>
               <Button variant="outline" onClick={onLogout}>

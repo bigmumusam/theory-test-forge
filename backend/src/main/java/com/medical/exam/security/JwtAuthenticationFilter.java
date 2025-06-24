@@ -1,6 +1,7 @@
 
 package com.medical.exam.security;
 
+import com.medical.exam.vo.CustomToken;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -25,24 +26,35 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, 
                                     FilterChain filterChain) throws ServletException, IOException {
+
         String token = getTokenFromRequest(request);
+        try{
+            if (StringUtils.hasText(token) && jwtUtil.validateToken(token)) {
+                String userId = jwtUtil.getUserIdFromToken(token);
+                String username = jwtUtil.getUsernameFromToken(token);
+                String role = jwtUtil.getRoleFromToken(token);
 
-        if (StringUtils.hasText(token) && jwtUtil.validateToken(token)) {
-            String userId = jwtUtil.getUserIdFromToken(token);
-            String username = jwtUtil.getUsernameFromToken(token);
-            String role = jwtUtil.getRoleFromToken(token);
+                // 1. 构造 CustomToken 并存入 JwtAccessContext
 
-            UsernamePasswordAuthenticationToken authentication = 
-                new UsernamePasswordAuthenticationToken(
-                    userId, 
-                    null, 
-                    Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()))
-                );
-            
-            SecurityContextHolder.getContext().setAuthentication(authentication);
+                JwtAccessContext.setLoginInfo(CustomToken.builder()
+                        .userId(userId)
+                        .role(role)
+                        .userName(username)
+                        .build());
+
+                UsernamePasswordAuthenticationToken authentication =
+                        new UsernamePasswordAuthenticationToken(
+                                userId,
+                                null,
+                                Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()))
+                        );
+
+                SecurityContextHolder.getContext().setAuthentication(authentication);
+            }
+            filterChain.doFilter(request, response);
+        }finally{
+            JwtAccessContext.clearLoginInfo();
         }
-
-        filterChain.doFilter(request, response);
     }
 
     private String getTokenFromRequest(HttpServletRequest request) {

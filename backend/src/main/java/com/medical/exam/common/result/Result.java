@@ -1,6 +1,7 @@
 package com.medical.exam.common.result;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.medical.exam.common.exception.CustomException;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -15,18 +16,17 @@ public class Result<T> {
     private String message;
     private T data;
     
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
-    private LocalDateTime timestamp;
+//    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+//    private LocalDateTime timestamp;
 
     public Result() {
-        this.timestamp = LocalDateTime.now();
+
     }
 
     public Result(Integer code, String message, T data) {
         this.code = code;
         this.message = message;
         this.data = data;
-        this.timestamp = LocalDateTime.now();
     }
 
     public static <T> Result<T> success() {
@@ -47,6 +47,14 @@ public class Result<T> {
 
     public static <T> Result<T> error(String message) {
         return new Result<>(500, message, null);
+    }
+
+    public static<T> Result<T> error(CustomException customException){
+        Result<T> httpResult = new Result<T>();
+        httpResult.setCode(customException.getCode());
+        httpResult.setMessage(customException.getMessage());
+        return  httpResult;
+
     }
 
     public static <T> Result<T> error(Integer code, String message) {

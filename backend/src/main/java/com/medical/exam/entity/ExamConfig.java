@@ -1,36 +1,30 @@
 package com.medical.exam.entity;
 
-import com.mybatisflex.annotation.Column;
 import com.mybatisflex.annotation.Id;
 import com.mybatisflex.annotation.KeyType;
 import com.mybatisflex.annotation.Table;
 import com.mybatisflex.core.keygen.KeyGenerators;
-import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.Builder;
-import lombok.NoArgsConstructor;
-
-import java.io.Serializable;
 import java.util.Date;
+import com.mybatisflex.annotation.Column;
 
 @Data
 @Builder
-@Table("sys_user")
-@NoArgsConstructor
-@AllArgsConstructor
-public class SysUser  implements Serializable {
-
-    private static final long serialVersionUID = 1L;
-    
+@Table("exam_config")
+public class ExamConfig {
     @Id(keyType = KeyType.Generator, value = KeyGenerators.snowFlakeId)
-    private Long userId;
-    private String idNumber;
-    private String userName;
-    private String role;
-    private String department;
+    private Long configId;
+    private String configName;
+    private Long categoryId;
+    private Integer duration;
+    private Integer totalScore;
+    private Integer passScore;
+    private Integer choiceCount;
+    private Integer judgmentCount;
+    private Integer choiceScore;
+    private Integer judgmentScore;
     private String status;
-    private String loginIp;
-    private Date loginDate;
     private Long createDept;
     private String createBy;
     @Column(onInsertValue = "now()")
@@ -39,4 +33,4 @@ public class SysUser  implements Serializable {
     @Column(onUpdateValue = "now()")
     private Date updateTime;
     private String remark;
-}
+} 
