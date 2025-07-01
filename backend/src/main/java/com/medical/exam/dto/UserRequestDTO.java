@@ -24,7 +24,7 @@ public class UserRequestDTO {
     @NotBlank(message = "角色不能为空")
     private String role;
 
-    @NotBlank(message = "科室不能为空")
+    @NotBlank(message = "题目分类不能为空")
     private String department;
 
 }

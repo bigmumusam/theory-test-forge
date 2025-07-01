@@ -1,13 +1,13 @@
-
 export interface Question {
   id: string;
-  type: 'choice' | 'judgment';
+  type: 'choice' | 'multi' | 'judgment';
   content: string;
   options?: string[];
-  correctAnswer: string | number;
+  correctAnswer: number | number[] | string;
   category: string;
   score: number;
   difficulty: 'easy' | 'medium' | 'hard';
+  remark?: string;
 }
 
 export interface ExamPaper {
@@ -16,11 +16,44 @@ export interface ExamPaper {
   questions: Question[];
   totalScore: number;
   duration: number; // minutes
-  status: 'pending' | 'in-progress' | 'completed';
+  status: 'pending' | 'in-progress' | 'completed' | 'timeout';
   startTime?: Date;
   endTime?: Date;
   submittedAnswers?: Record<string, any>;
   finalScore?: number;
+}
+
+// 试卷列表项类型
+export interface ExamPaperListItem {
+  paperId: string;
+  paperName: string;
+  categoryId: string;
+  categoryName: string;
+  totalQuestions: number;
+  totalScore: number;
+  duration: number;
+  createTime: string;
+  createBy: string;
+  status: string;
+  usageCount: number;
+}
+
+// 试卷列表查询参数
+export interface ExamPaperQueryParams {
+  paperName?: string;
+  categoryId?: string;
+  status?: string;
+  pageNum: number;
+  pageSize: number;
+}
+
+// 试卷列表响应
+export interface ExamPaperListResponse {
+  records: ExamPaperListItem[];
+  total: number;
+  size: number;
+  current: number;
+  pages: number;
 }
 
 export interface Category {
@@ -36,8 +69,15 @@ export interface ExamConfig {
   categories: string[];
   questionTypes: {
     choice: { count: number; score: number };
+    multi: { count: number; score: number };
     judgment: { count: number; score: number };
   };
   duration: number;
   totalScore: number;
+}
+
+export interface ApiResponse<T = any> {
+  code: number;
+  data: T;
+  message?: string;
 }

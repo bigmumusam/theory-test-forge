@@ -1,8 +1,9 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   Table, 
   TableBody, 
@@ -19,81 +20,58 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
-import { Eye, Download, Trash2, RefreshCw } from 'lucide-react';
+import { Eye, Download, Trash2, RefreshCw, Search } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useOptions } from '@/context/OptionsContext';
+import { post } from '@/lib/request';
+import { ExamPaperListItem, ExamPaperQueryParams, ExamPaperListResponse } from '@/types/exam';
+import PreviewExamPaperDialog from './PreviewExamPaperDialog';
+import { ApiResponse } from '@/types/api';
 
-interface ExamPaper {
-  id: string;
-  name: string;
-  category: string;
-  questionCount: number;
-  totalScore: number;
-  duration: number;
-  createdAt: string;
-  createdBy: string;
-  status: 'active' | 'inactive';
-  usageCount: number;
-}
+const ALL_VALUE = "__ALL__";
 
 const ExamPaperList: React.FC = () => {
-  const [papers, setPapers] = useState<ExamPaper[]>([]);
+  const [papers, setPapers] = useState<ExamPaperListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const itemsPerPage = 10;
-  const { toast } = useToast();
+  const [total, setTotal] = useState(0);
+  const [pageSize] = useState(10);
+  
+  // 筛选条件
+  const [filters, setFilters] = useState<ExamPaperQueryParams>({
+    paperName: '',
+    categoryId: '',
+    status: '',
+    pageNum: 1,
+    pageSize: 10
+  });
 
-  // 模拟API调用 - 获取试卷列表
-  const fetchPapers = async (page: number = 1, category?: string, status?: string) => {
+  const { toast } = useToast();
+  const { options } = useOptions();
+
+  const [previewPaper, setPreviewPaper] = useState<ExamPaperListItem | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  // 获取试卷列表
+  const fetchPapers = async (params: ExamPaperQueryParams) => {
     setLoading(true);
     try {
-      // 模拟API调用延迟
-      await new Promise(resolve => setTimeout(resolve, 500));
+      const response = await post<ApiResponse<ExamPaperListResponse>>('/admin/generated-papers/list', params);
       
-      // 模拟数据
-      const mockData = [
-        {
-          id: '1',
-          name: '消化内科理论考试-试卷A',
-          category: '消化内科',
-          questionCount: 60,
-          totalScore: 100,
-          duration: 90,
-          createdAt: '2024-01-15 14:30',
-          createdBy: '管理员',
-          status: 'active' as const,
-          usageCount: 23
-        },
-        {
-          id: '2',
-          name: '肝胆外科专业考试-试卷B',
-          category: '肝胆外科',
-          questionCount: 65,
-          totalScore: 100,
-          duration: 120,
-          createdAt: '2024-01-14 10:20',
-          createdBy: '管理员',
-          status: 'active' as const,
-          usageCount: 15
-        },
-        {
-          id: '3',
-          name: '心血管内科综合测试',
-          category: '心血管内科',
-          questionCount: 50,
-          totalScore: 100,
-          duration: 80,
-          createdAt: '2024-01-13 16:45',
-          createdBy: '管理员',
-          status: 'inactive' as const,
-          usageCount: 8
-        }
-      ];
-
-      setPapers(mockData);
-      setTotalPages(Math.ceil(mockData.length / itemsPerPage));
-      
-      console.log('试卷列表加载成功');
+      if (response.code === 200) {
+        const data = response.data;
+        setPapers(data.records || []);
+        setTotal(data.total || 0);
+        setTotalPages(data.pages || 1);
+        setCurrentPage(data.current || 1);
+      } else {
+        toast({
+          title: "加载失败",
+          description: response.message || "获取试卷列表失败",
+          variant: "destructive"
+        });
+      }
     } catch (error) {
       console.error('获取试卷列表失败:', error);
       toast({
@@ -107,79 +85,64 @@ const ExamPaperList: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchPapers(currentPage);
-  }, [currentPage]);
+    fetchPapers(filters);
+  }, [filters]);
 
-  const paginatedPapers = papers.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
-
-  // 模拟API调用 - 查看试卷详情
-  const handleViewPaper = async (paperId: string) => {
-    try {
-      console.log('查看试卷详情:', paperId);
-      // 模拟API调用
-      toast({
-        title: "查看试卷",
-        description: `正在查看试卷 ID: ${paperId}`
-      });
-    } catch (error) {
-      console.error('查看试卷失败:', error);
-    }
+  // 处理筛选条件变化
+  const handleFilterChange = (key: keyof ExamPaperQueryParams, value: string | number) => {
+    let realValue = value;
+    if (key === 'categoryId' && value === ALL_VALUE) realValue = '';
+    if (key === 'status' && value === ALL_VALUE) realValue = '';
+    setFilters(prev => ({
+      ...prev,
+      [key]: realValue,
+      pageNum: 1 // 重置到第一页
+    }));
   };
 
-  // 模拟API调用 - 下载试卷
-  const handleDownloadPaper = async (paperId: string) => {
-    try {
-      console.log('下载试卷:', paperId);
-      // 模拟下载过程
-      toast({
-        title: "开始下载",
-        description: "试卷下载中..."
-      });
-      
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      toast({
-        title: "下载完成",
-        description: "试卷已下载到本地"
-      });
-    } catch (error) {
-      console.error('下载试卷失败:', error);
-      toast({
-        title: "下载失败",
-        description: "试卷下载失败，请重试",
-        variant: "destructive"
-      });
-    }
+  // 处理搜索
+  const handleSearch = () => {
+    setFilters(prev => ({
+      ...prev,
+      pageNum: 1
+    }));
   };
 
-  // 模拟API调用 - 删除试卷
-  const handleDeletePaper = async (paperId: string) => {
+  // 重置筛选
+  const handleReset = () => {
+    setFilters({
+      paperName: '',
+      categoryId: '',
+      status: '',
+      pageNum: 1,
+      pageSize: 10
+    });
+  };
+
+  // 查看试卷详情，弹出预览对话框
+  const handleViewPaper = async (paper: ExamPaperListItem) => {
+    setPreviewPaper(paper);
+    setPreviewOpen(true);
+  };
+
+  // 启用/停用试卷
+  const handleToggleStatus = async (paper: ExamPaperListItem) => {
+    const newStatus = paper.status === '1' ? '0' : '1';
     try {
-      console.log('删除试卷:', paperId);
-      // 模拟API调用
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      setPapers(papers.filter(paper => paper.id !== paperId));
-      
-      toast({
-        title: "删除成功",
-        description: "试卷已删除"
-      });
-    } catch (error) {
-      console.error('删除试卷失败:', error);
-      toast({
-        title: "删除失败",
-        description: "删除试卷失败，请重试",
-        variant: "destructive"
-      });
+      const response = await post<ApiResponse<any>>('/admin/generated-papers/update', { paperId: paper.paperId, status: newStatus });
+      if (response.code === 200) {
+        toast({ title: '操作成功', description: `试卷已${newStatus === '1' ? '启用' : '停用'}` });
+        fetchPapers(filters);
+      } else {
+        toast({ title: '操作失败', description: response.message || '操作失败', variant: 'destructive' });
+      }
+    } catch (e) {
+      toast({ title: '操作失败', description: String(e), variant: 'destructive' });
     }
   };
 
   const getStatusBadge = (status: string) => {
-    return status === 'active' ? (
+    return status === '1' ? (
       <Badge variant="default" className="bg-green-100 text-green-800">启用</Badge>
     ) : (
       <Badge variant="secondary" className="bg-gray-100 text-gray-800">停用</Badge>
@@ -187,28 +150,75 @@ const ExamPaperList: React.FC = () => {
   };
 
   const handleRefresh = () => {
-    fetchPapers(currentPage);
+    fetchPapers(filters);
   };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-semibold text-gray-800">试卷列表</h3>
-        <div className="flex items-center space-x-4">
+      </div>
+
+      {/* 筛选区域 */}
+      <Card className="p-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+          <div>
+            <div className="flex space-x-2">
+              <Input
+                placeholder="请输入试卷名称"
+                value={filters.paperName}
+                onChange={(e) => handleFilterChange('paperName', e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+              />
+            </div>
+          </div>
+
+          <div>
+            <Select
+              value={filters.categoryId || ALL_VALUE}
+              onValueChange={(value) => handleFilterChange('categoryId', value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="选择题目分类" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_VALUE}>全部题目分类</SelectItem>
+                {options.categories && Object.entries(options.categories).map(([id, name]) => (
+                  <SelectItem key={id} value={id}>
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Select
+              value={filters.status || ALL_VALUE}
+              onValueChange={(value) => handleFilterChange('status', value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="选择状态" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_VALUE}>全部状态</SelectItem>
+                <SelectItem value="1">启用</SelectItem>
+                <SelectItem value="0">停用</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex space-x-2">
           <Button 
             variant="outline" 
-            size="sm" 
-            onClick={handleRefresh}
-            disabled={loading}
+              onClick={handleReset}
+              className="flex-1"
           >
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            刷新
+              重置
           </Button>
-          <div className="text-sm text-gray-600">
-            共 {papers.length} 份试卷
           </div>
         </div>
-      </div>
+      </Card>
 
       <Card className="p-6">
         {loading ? (
@@ -222,7 +232,7 @@ const ExamPaperList: React.FC = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead className="font-bold text-gray-900">试卷名称</TableHead>
-                  <TableHead className="font-bold text-gray-900">科室</TableHead>
+                  <TableHead className="font-bold text-gray-900">题目分类</TableHead>
                   <TableHead className="font-bold text-gray-900">题目数量</TableHead>
                   <TableHead className="font-bold text-gray-900">总分</TableHead>
                   <TableHead className="font-bold text-gray-900">时长</TableHead>
@@ -233,14 +243,21 @@ const ExamPaperList: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedPapers.map((paper) => (
-                  <TableRow key={paper.id}>
-                    <TableCell className="font-medium">{paper.name}</TableCell>
-                    <TableCell>{paper.category}</TableCell>
-                    <TableCell>{paper.questionCount}</TableCell>
+                {papers.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-8 text-gray-500">
+                      暂无数据
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  papers.map((paper) => (
+                    <TableRow key={paper.paperId}>
+                      <TableCell className="font-medium">{paper.paperName}</TableCell>
+                      <TableCell>{paper.categoryName}</TableCell>
+                      <TableCell>{paper.totalQuestions}</TableCell>
                     <TableCell>{paper.totalScore}分</TableCell>
                     <TableCell>{paper.duration}分钟</TableCell>
-                    <TableCell>{paper.createdAt}</TableCell>
+                      <TableCell>{paper.createTime}</TableCell>
                     <TableCell>{getStatusBadge(paper.status)}</TableCell>
                     <TableCell>{paper.usageCount}</TableCell>
                     <TableCell>
@@ -248,30 +265,33 @@ const ExamPaperList: React.FC = () => {
                         <Button 
                           size="sm" 
                           variant="outline"
-                          onClick={() => handleViewPaper(paper.id)}
+                            onClick={() => handleViewPaper(paper)}
                         >
-                          <Eye className="h-4 w-4" />
+                            查看
                         </Button>
                         <Button 
                           size="sm" 
-                          variant="outline"
-                          onClick={() => handleDownloadPaper(paper.id)}
+                            variant={paper.status === '1' ? 'secondary' : 'default'}
+                            onClick={() => handleToggleStatus(paper)}
                         >
-                          <Download className="h-4 w-4" />
-                        </Button>
-                        <Button 
-                          size="sm" 
-                          variant="destructive"
-                          onClick={() => handleDeletePaper(paper.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
+                            {paper.status === '1' ? '停用' : '启用'}
                         </Button>
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                  ))
+                )}
               </TableBody>
             </Table>
+
+            {previewPaper && (
+              <PreviewExamPaperDialog
+                open={previewOpen}
+                onOpenChange={setPreviewOpen}
+                paper={previewPaper}
+                readOnly
+              />
+            )}
 
             {totalPages > 1 && (
               <div className="mt-6">
@@ -279,7 +299,7 @@ const ExamPaperList: React.FC = () => {
                   <PaginationContent>
                     <PaginationItem>
                       <PaginationPrevious 
-                        onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                        onClick={() => handleFilterChange('pageNum', Math.max(1, currentPage - 1))}
                         className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
                       />
                     </PaginationItem>
@@ -287,7 +307,7 @@ const ExamPaperList: React.FC = () => {
                     {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
                       <PaginationItem key={page}>
                         <PaginationLink
-                          onClick={() => setCurrentPage(page)}
+                          onClick={() => handleFilterChange('pageNum', page)}
                           isActive={currentPage === page}
                           className="cursor-pointer"
                         >
@@ -298,7 +318,7 @@ const ExamPaperList: React.FC = () => {
                     
                     <PaginationItem>
                       <PaginationNext 
-                        onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                        onClick={() => handleFilterChange('pageNum', Math.min(totalPages, currentPage + 1))}
                         className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
                       />
                     </PaginationItem>
@@ -314,4 +334,3 @@ const ExamPaperList: React.FC = () => {
 };
 
 export default ExamPaperList;
-

@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { User, LoginCredentials } from '../../types/auth';
 import { useToast } from '@/hooks/use-toast';
 import { request } from '@/lib/request';
+import { useOptions } from '../../context/OptionsContext';
 
 interface LoginFormProps {
   onLogin: (user: User) => void;
@@ -18,6 +19,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin }) => {
   });
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const { setOptions } = useOptions();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,9 +27,16 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin }) => {
       toast({ title: "请填写完整信息", description: "请输入身份证号和姓名", variant: "destructive" });
       return;
     }
-    const idPattern = /^[1-9]\d{5}(18|19|20)\d{2}((0[1-9])|(1[0-2]))(([0-2][1-9])|10|20|30|31)\d{3}[0-9Xx]$/;
+    // 身份证号格式验证：18位，前17位数字，最后一位数字或X
+    const idPattern = /^\d{17}[\dXx]$/;
     if (!idPattern.test(credentials.idNumber)) {
       toast({ title: "身份证号格式错误", description: "请输入正确的身份证号码", variant: "destructive" });
+      return;
+    }
+    
+    // 额外验证：检查长度
+    if (credentials.idNumber.length !== 18) {
+      toast({ title: "身份证号格式错误", description: "身份证号必须是18位", variant: "destructive" });
       return;
     }
     setIsLoading(true);
@@ -39,10 +48,22 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin }) => {
       // 兼容后端返回结构
       const { token, user } = res.data || res;
       if (!token || !user) throw new Error('登录响应异常');
+      // 兼容 nameName 字段
+      const userObj = { ...user, name: user.nameName || user.userName || user.name };
       localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(user));
-      onLogin(user);
-      toast({ title: "登录成功", description: `欢迎，${user.name}！` });
+      localStorage.setItem('user', JSON.stringify(userObj));
+      // 登录成功后拉取 options
+      try {
+        const optionsRes = await request('/admin/options', {
+          method: 'POST',
+        });
+        setOptions(optionsRes.data);
+        localStorage.setItem('options', JSON.stringify(optionsRes.data));
+      } catch (e) {
+        // 可选：处理 options 拉取失败
+      }
+      onLogin(userObj);
+      toast({ title: "登录成功", description: `欢迎，${userObj.name}！` });
     } catch (error: any) {
       toast({ title: "登录失败", description: String(error), variant: "destructive" });
     } finally {

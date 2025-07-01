@@ -1,6 +1,6 @@
 <configuration>
     <!-- 定义日志文件的保存路径 -->
-    <property name="LOG_PATH" value="/project/backend/logs" />
+    <property name="LOG_PATH" value="/home/905/logs" />
     <property name="LOG_FILE_NAME" value="app.log" />
 
     <!-- 控制台日志输出格式 -->

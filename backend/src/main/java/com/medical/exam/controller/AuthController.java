@@ -44,15 +44,22 @@ public class AuthController {
 
     @PostMapping("/users/delete")
     public Result<?> deleteUser(@RequestBody UserUpdateRequestDTO request) {
-        authService.deleteUser(request.getId());
+        authService.deleteUser(request.getUserId());
         return Result.success("用户删除成功");
     }
 
     @PostMapping("/users/import")
-    public Result<Map<String, Object>> importUsers(@RequestParam("file") MultipartFile file,
-                                                   Authentication auth) {
-        Map<String, Object> result = authService.importUsers(file, Long.valueOf(auth.getName()));
-        return Result.success(result);
+    public Result<?> importUsers(@RequestParam("file") MultipartFile file) {
+        if (file.isEmpty()) {
+            return Result.error("请选择文件上传");
+        }
+        // 验证文件类型
+        String originalFilename = file.getOriginalFilename();
+        if (originalFilename == null ||
+                (!originalFilename.endsWith(".xls") && !originalFilename.endsWith(".xlsx"))) {
+            return Result.error("仅支持Excel文件(.xls, .xlsx)");
+        }
+        return Result.success(authService.importUsers(file));
     }
 
     @PostMapping("/users/batch-delete")
@@ -68,31 +75,25 @@ public class AuthController {
 
     // 角色管理
     @PostMapping("/roles/add")
-    public Result<?> addRole(@RequestBody Map<String, Object> request, Authentication auth) {
-        authService.addRole(request, Long.valueOf(auth.getName()));
+    public Result<?> addRole(@Valid @RequestBody RoleRequestDTO request) {
+        authService.addRole(request);
         return Result.success("角色添加成功");
     }
 
     @PostMapping("/roles/update")
-    public Result<?> updateRole(@RequestBody Map<String, Object> request, Authentication auth) {
-        authService.updateRole(request.get("id").toString(), request, Long.valueOf(auth.getName()));
+    public Result<?> updateRole(@Valid @RequestBody RoleUpdateRequestDTO request) {
+        authService.updateRole(request);
         return Result.success("角色更新成功");
     }
 
     @PostMapping("/roles/delete")
-    public Result<?> deleteRole(@RequestBody Map<String, Object> request, Authentication auth) {
-        authService.deleteRole(request.get("id").toString());
+    public Result<?> deleteRole(@Valid @RequestBody RoleUpdateRequestDTO request) {
+        authService.deleteRole(request.getRoleId());
         return Result.success("角色删除成功");
     }
 
     @PostMapping("/roles/list")
-    public Result<?> getRoles(@RequestBody RoleQueryDTO request) {
-        Map<String, Object> roles = authService.getRoles(
-                request.getStatus(),
-                request.getKeyword(),
-                request.getPageNum(),
-                request.getPageSize()
-        );
-        return Result.success(roles);
+    public Result<?> getRoles(@Valid @RequestBody RoleQueryDTO request) {
+        return Result.success(authService.getRoles(request));
     }
 }

@@ -4,19 +4,29 @@ import AdminDashboard from '../components/admin/AdminDashboard';
 import StudentDashboard from '../components/student/StudentDashboard';
 import { User } from '../types/auth';
 import { Card } from '@/components/ui/card';
+import { useOptions } from '../context/OptionsContext';
 
 const Index = () => {
   const [user, setUser] = useState<User | null>(null);
+  const { setOptions } = useOptions();
 
-  // 自动恢复登录态
+  // 自动恢复登录态和options
   useEffect(() => {
     const userStr = localStorage.getItem('user');
+    const optionsStr = localStorage.getItem('options');
+    
     if (userStr) {
       try {
         setUser(JSON.parse(userStr));
       } catch {}
     }
-  }, []);
+    
+    if (optionsStr) {
+      try {
+        setOptions(JSON.parse(optionsStr));
+      } catch {}
+    }
+  }, [setOptions]);
 
   const handleLogin = (userData: User) => {
     setUser(userData);
@@ -34,7 +44,7 @@ const Index = () => {
         <div className="container mx-auto px-4 py-12">
           <div className="text-center mb-12">
             <h1 className="text-4xl font-bold text-gray-800 mb-4">
-              医学理论考试系统
+              理论考试系统
             </h1>
             <p className="text-xl text-gray-600 mb-8">
               专业、安全、高效的在线考试平台
@@ -65,7 +75,7 @@ const Index = () => {
                 </svg>
               </div>
               <h3 className="text-lg font-semibold text-gray-800 mb-2">专业题库</h3>
-              <p className="text-gray-600 text-sm">分科室题库管理，内容专业权威</p>
+              <p className="text-gray-600 text-sm">分题目分类题库管理，内容专业权威</p>
             </div>
             
             <div className="text-center p-6 bg-white/60 rounded-lg">
@@ -77,6 +87,10 @@ const Index = () => {
               <h3 className="text-lg font-semibold text-gray-800 mb-2">智能生成</h3>
               <p className="text-gray-600 text-sm">自动生成试卷，实时评分反馈</p>
             </div>
+          </div>
+          <div className="mt-8 max-w-2xl mx-auto text-center text-gray-700 text-sm">
+            <div className="mb-2 font-semibold">演示账号</div>
+            <div>学员：管理员创建的真实账号登录</div>
           </div>
         </div>
       </div>

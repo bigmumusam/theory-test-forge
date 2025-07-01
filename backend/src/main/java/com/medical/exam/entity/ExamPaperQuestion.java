@@ -5,18 +5,23 @@ import com.mybatisflex.annotation.KeyType;
 import com.mybatisflex.annotation.Table;
 import com.mybatisflex.core.keygen.KeyGenerators;
 import com.mybatisflex.annotation.Column;
+import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.Builder;
+import lombok.NoArgsConstructor;
+
 import java.util.Date;
 
 @Data
 @Builder
 @Table("exam_paper_question")
+@NoArgsConstructor
+@AllArgsConstructor
 public class ExamPaperQuestion {
     @Id(keyType = KeyType.Generator, value = KeyGenerators.snowFlakeId)
-    private Long id;
-    private Long paperId;
-    private Long questionId;
+    private String id;
+    private String paperId;
+    private String questionId;
     private Integer questionOrder;
     private Integer questionScore;
     @Column(onInsertValue = "now()")

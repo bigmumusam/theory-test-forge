@@ -1,16 +1,23 @@
-
 package com.medical.exam.service;
 
+import cn.hutool.core.util.StrUtil;
+import cn.hutool.poi.excel.ExcelReader;
+import cn.hutool.poi.excel.ExcelUtil;
 import com.medical.exam.common.exception.CustomException;
 import com.medical.exam.dto.*;
+import com.medical.exam.entity.SysLog;
 import com.medical.exam.entity.SysUser;
+import com.medical.exam.entity.SysRole;
+import com.medical.exam.mapper.SysLogMapper;
 import com.medical.exam.mapper.SysUserMapper;
+import com.medical.exam.mapper.SysRoleMapper;
 import com.medical.exam.security.JwtAccessContext;
 import com.medical.exam.security.JwtUtil;
 import com.medical.exam.vo.CustomToken;
 import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.query.QueryWrapper;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -18,18 +25,27 @@ import java.util.*;
 import java.util.regex.Pattern;
 
 import static com.medical.exam.entity.table.SysUserTableDef.SYS_USER;
+import static com.medical.exam.entity.table.SysRoleTableDef.SYS_ROLE;
 
 @Service
+@Slf4j
 public class AuthService {
 
     @Resource
     private SysUserMapper userMapper;
 
     @Resource
+    private SysRoleMapper roleMapper;
+
+    @Resource
+    private SysLogMapper sysLogMapper;
+
+    @Resource
     private JwtUtil jwtUtil;
 
+    // 身份证号格式验证：18位，前17位数字，最后一位数字或X
     private static final Pattern ID_PATTERN = Pattern.compile(
-        "^[1-9]\\d{5}(18|19|20)\\d{2}((0[1-9])|(1[0-2]))(([0-2][1-9])|10|20|30|31)\\d{3}[0-9Xx]$"
+        "^\\d{17}[\\dXx]$"
     );
 
     public LoginResponse login(LoginRequest request) {
@@ -92,7 +108,7 @@ public class AuthService {
     public void updateUser(UserUpdateRequestDTO request) {
         CustomToken customToken = JwtAccessContext.getLoginInfo();
         userMapper.update(SysUser.builder()
-                  .userId(request.getId())
+                  .userId(request.getUserId())
 //                .idNumber(request.getIdNumber())
                 .userName(request.getUserName())
                 .role(request.getRole())
@@ -117,19 +133,70 @@ public class AuthService {
 
 
 
-    public void deleteUser(Long id) {
+    public void deleteUser(String id) {
         userMapper.deleteById(id);
     }
 
-    public Map<String, Object> importUsers(MultipartFile file, Long userId) {
-        System.out.println("导入用户文件: " + file.getOriginalFilename() + ", 操作用户: " + userId);
+    public String importUsers(MultipartFile file) {
+        CustomToken customToken = JwtAccessContext.getLoginInfo();
+        List<SysUser> sysUsers = new ArrayList<>();
+        try{
+            ExcelReader reader = ExcelUtil.getReader(file.getInputStream());
+            List<Map<String, Object>> readAll = reader.readAll();
+            readAll.forEach(System.out::println);
 
-        Map<String, Object> result = new HashMap<>();
-        result.put("successCount", 5);
-        result.put("failCount", 0);
-        result.put("total", 5);
 
-        return result;
+            // 处理读取到的数据
+            for (Map<String, Object> row : readAll) {
+                // 处理每一行数据
+                Object nameObj = row.get("姓名");
+                Object idNumberObj = row.get("身份证号");
+                Object departmentObj = row.get("所属部门");
+                Object roleObj = row.get("所属角色");
+
+                // 检查四个字段是否有一个为空
+                if (nameObj == null || idNumberObj == null || departmentObj == null || roleObj == null) {
+
+                    continue; // 忽略该条数据
+                }
+
+                String name = nameObj.toString().trim();
+                String idNumber = idNumberObj.toString().trim();
+                String department = departmentObj.toString().trim();
+                String role = roleObj.toString().trim();
+
+                // 进一步检查字符串是否为空
+                if (name.isEmpty() || idNumber.isEmpty() || department.isEmpty() || role.isEmpty()) {
+                    log.error("存在空值 name:{}，idNumber:{}，department:{}，role:{}",name,idNumber,department,role);
+                    continue;
+                }
+                log.info("导入用户 name:{}，idNumber:{}，department:{}，role:{}",name,idNumber,department,role);
+                //判断idNumber 是否已经存在
+                long count = userMapper.selectCountByQuery(QueryWrapper.create().where(SYS_USER.ID_NUMBER.eq(idNumber)));
+                if(count>0){
+                    log.info("idNumber:{}已存在",idNumber);
+                    continue;
+                }
+                sysUsers.add(SysUser.builder()
+                        .userName(row.get("姓名").toString())
+                        .idNumber(row.get("身份证号").toString())
+                        .department(row.get("所属部门").toString())
+                        .role(getRoleCodeByName(row.get("所属角色").toString()))
+                                .status("1")
+                                .createBy(customToken.getUserName())
+                        .build());
+            }
+            userMapper.insertBatch(sysUsers);
+        }catch (Exception e){
+            throw new CustomException("导入用户错误:"+e.getMessage());
+        }
+        String message =  "成功导入用户"+sysUsers.size()+"条";
+        sysLogMapper.insert(SysLog.builder()
+                        .userId(customToken.getUserId())
+                        .userName(customToken.getUserName())
+                        .content(message)
+                .build());
+        return message;
     }
 
 
@@ -139,47 +206,53 @@ public class AuthService {
     }
 
     // 角色管理
-    public Map<String, Object> getRoles(String status, String keyword, Integer page, Integer size) {
-        List<Map<String, Object>> roles = new ArrayList<>();
-
-        Map<String, Object> role1 = new HashMap<>();
-        role1.put("id", "1");
-        role1.put("roleName", "系统管理员");
-        role1.put("roleKey", "admin");
-        role1.put("roleSort", 1);
-        role1.put("status", "1");
-        role1.put("remark", "超级管理员，拥有所有权限");
-        role1.put("createTime", "2024-01-15 10:00:00");
-        roles.add(role1);
-
-        Map<String, Object> role2 = new HashMap<>();
-        role2.put("id", "2");
-        role2.put("roleName", "普通考生");
-        role2.put("roleKey", "student");
-        role2.put("roleSort", 2);
-        role2.put("status", "1");
-        role2.put("remark", "普通考生，只能参加考试");
-        role2.put("createTime", "2024-01-15 10:30:00");
-        roles.add(role2);
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("data", roles);
-        response.put("total", roles.size());
-        response.put("page", page);
-        response.put("size", size);
-
-        return response;
+    public Page<SysRole> getRoles(RoleQueryDTO queryDTO) {
+        QueryWrapper queryWrapper = QueryWrapper.create()
+            .where(SYS_ROLE.ROLE_NAME.like(queryDTO.getKeyword()).or(SYS_ROLE.ROLE_KEY.like(queryDTO.getKeyword())))
+            .and(SYS_ROLE.STATUS.eq(queryDTO.getStatus())).orderBy(SYS_ROLE.ROLE_SORT.asc());
+        return roleMapper.paginate(queryDTO.getPageNum(), queryDTO.getPageSize(), queryWrapper);
     }
 
-    public void addRole(Map<String, Object> request, Long userId) {
-        System.out.println("添加角色: " + request + ", 操作用户: " + userId);
+    public void addRole(RoleRequestDTO request) {
+        CustomToken customToken = JwtAccessContext.getLoginInfo();
+        roleMapper.insert(SysRole.builder()
+            .roleName(request.getRoleName())
+            .roleKey(request.getRoleKey())
+            .roleSort(request.getRoleSort())
+            .status(request.getStatus())
+            .remark(request.getRemark())
+            .createBy(customToken.getUserName())
+            .build());
     }
 
-    public void updateRole(String id, Map<String, Object> request, Long userId) {
-        System.out.println("更新角色ID: " + id + ", 数据: " + request + ", 操作用户: " + userId);
+    public void updateRole(RoleUpdateRequestDTO request) {
+        CustomToken customToken = JwtAccessContext.getLoginInfo();
+        roleMapper.update(SysRole.builder()
+            .roleId(request.getRoleId())
+            .roleName(request.getRoleName())
+            .roleKey(request.getRoleKey())
+            .roleSort(request.getRoleSort())
+            .status(request.getStatus())
+            .remark(request.getRemark())
+            .updateBy(customToken.getUserName())
+            .build());
     }
 
     public void deleteRole(String id) {
-        System.out.println("删除角色ID: " + id);
+        roleMapper.deleteById(id);
     }
+
+    private String getRoleCodeByName(String roleName){
+        if(roleName.equals("普通考生")){
+            return "student";
+        }
+        if(roleName.equals("考试管理员")){
+            return "exam_admin";
+        }
+        if(roleName.equals("系统管理员")){
+            return "admin";
+        }
+        return "student";
+    }
+
 }

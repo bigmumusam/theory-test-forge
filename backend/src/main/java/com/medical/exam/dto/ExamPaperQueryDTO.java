@@ -7,10 +7,10 @@ import lombok.Data;
 
 @Data
 public class ExamPaperQueryDTO {
-    @Size(max = 50, message = "科室名称不能超过50字符")
-    private String category;
-    @Size(max = 1, message = "状态只能为1位字符")
+    private String paperName;
+    private String categoryId;
     private String status;
+
     @NotNull(message = "页码不能为空")
     @Min(value = 1, message = "页码最小为1")
     private Integer pageNum = 1;

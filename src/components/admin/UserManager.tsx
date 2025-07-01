@@ -12,9 +12,11 @@ import { useToast } from '@/hooks/use-toast';
 import ImportDialog from './ImportDialog';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink } from '@/components/ui/pagination';
 import { request } from '@/lib/request';
+import { useOptions } from '@/context/OptionsContext';
 
 const UserManager = () => {
   const { toast } = useToast();
+  const { options, setOptions } = useOptions();
   const [users, setUsers] = useState([]);
   const [searchKeyword, setSearchKeyword] = useState('');
   const [selectedRole, setSelectedRole] = useState('all');
@@ -35,14 +37,6 @@ const UserManager = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [totalRows, setTotalRows] = useState(0);
 
-  const departments = [
-    { id: '1', name: '消化内科' },
-    { id: '2', name: '肝胆外科' },
-    { id: '3', name: '心血管内科' },
-    { id: '4', name: '呼吸内科' },
-    { id: '5', name: '系统管理' }
-  ];
-
   // 查询用户列表
   const fetchUsers = async () => {
     try {
@@ -58,7 +52,7 @@ const UserManager = () => {
         method: 'POST',
         body: JSON.stringify(params)
       });
-      setUsers(res.data.records || []);
+      setUsers((res.data.records || []).map(u => ({ ...u, id: u.userId })));
       setTotalPages(res.data.totalPage || 1);
       setTotalRows(res.data.totalRow || 0);
     } catch (error) {
@@ -98,7 +92,7 @@ const UserManager = () => {
       if (editingUser) {
         await request('/auth/users/update', {
           method: 'POST',
-          body: JSON.stringify({ ...formData, id: editingUser.id })
+          body: JSON.stringify({ ...formData, userId: editingUser.id })
         });
         toast({ title: '成功', description: '用户信息已更新' });
       } else {
@@ -107,6 +101,12 @@ const UserManager = () => {
           body: JSON.stringify(formData)
         });
         toast({ title: '成功', description: '用户已添加' });
+        // 新增用户后刷新 options
+        try {
+          const optionsRes = await request('/admin/options', { method: 'POST' });
+          setOptions(optionsRes.data);
+          localStorage.setItem('options', JSON.stringify(optionsRes.data));
+        } catch (e) {}
       }
       setIsDialogOpen(false);
       fetchUsers();
@@ -115,22 +115,25 @@ const UserManager = () => {
     }
   };
 
-  const handleDeleteUser = async (userId) => {
+  const handleImportUsers = async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
     try {
-      await request('/auth/users/delete', {
+      await request('/auth/users/import', {
         method: 'POST',
-        body: JSON.stringify({ id: userId })
+        body: formData,
       });
-      toast({ title: '成功', description: '用户已删除' });
+      toast({ title: '导入成功', description: '用户数据已导入' });
       fetchUsers();
+      // 导入后刷新 options
+      try {
+        const optionsRes = await request('/admin/options', { method: 'POST' });
+        setOptions(optionsRes.data);
+        localStorage.setItem('options', JSON.stringify(optionsRes.data));
+      } catch (e) {}
     } catch (error) {
-      toast({ title: '删除失败', description: String(error), variant: 'destructive' });
+      toast({ title: '导入失败', description: String(error), variant: 'destructive' });
     }
-  };
-
-  const handleImportUsers = (file: File) => {
-    // 可实现真实导入逻辑
-    toast({ title: '暂未实现', description: '请用后端接口实现导入', variant: 'destructive' });
   };
 
   const clearFilters = () => {
@@ -181,9 +184,11 @@ const UserManager = () => {
                   <Input
                     id="idNumber"
                     value={formData.idNumber}
-                    onChange={(e) => setFormData({...formData, idNumber: e.target.value})}
+                    onChange={e => setFormData({ ...formData, idNumber: e.target.value })}
                     placeholder="请输入身份证号"
-                    readOnly
+                    readOnly={!!editingUser}
+                    disabled={!!editingUser}
+                    className={editingUser ? 'bg-gray-100 text-gray-400' : ''}
                   />
                 </div>
                 <div>
@@ -200,31 +205,27 @@ const UserManager = () => {
                   </Select>
                 </div>
                 <div>
-                  <Label htmlFor="department">科室</Label>
-                  <Select value={formData.department} onValueChange={(value) => setFormData({...formData, department: value})}>
+                  <Label htmlFor="department">所属部门</Label>
+                  <Input
+                    id="department"
+                    value={formData.department}
+                    onChange={e => setFormData({ ...formData, department: e.target.value })}
+                    placeholder="请输入所属部门"
+                  />
+                </div>
+                {editingUser && (
+                <div>
+                  <Label htmlFor="status">状态</Label>
+                  <Select value={formData.status} onValueChange={(value) => setFormData({...formData, status: value})}>
                     <SelectTrigger>
-                      <SelectValue placeholder="选择科室" />
+                      <SelectValue placeholder="选择状态" />
                     </SelectTrigger>
                     <SelectContent>
-                      {departments.map(dept => (
-                        <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>
-                      ))}
+                      <SelectItem value="1">正常</SelectItem>
+                      <SelectItem value="0">停用</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                {editingUser && (
-                  <div>
-                    <Label htmlFor="status">状态</Label>
-                    <Select value={formData.status} onValueChange={(value) => setFormData({...formData, status: value})}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="选择状态" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1">正常</SelectItem>
-                        <SelectItem value="0">停用</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
                 )}
                 <div className="flex justify-end space-x-2">
                   <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
@@ -265,12 +266,12 @@ const UserManager = () => {
           </Select>
           <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
             <SelectTrigger className="w-40">
-              <SelectValue placeholder="科室筛选" />
+              <SelectValue placeholder="部门筛选" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部科室</SelectItem>
-              {departments.map(dept => (
-                <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>
+              <SelectItem value="all">全部部门</SelectItem>
+              {options?.departments && Object.entries(options.departments).map(([id, name]) => (
+                <SelectItem key={id} value={id}>{name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -297,7 +298,7 @@ const UserManager = () => {
                 <TableHead className="font-bold text-gray-900 px-2 py-1">姓名</TableHead>
                 <TableHead className="font-bold text-gray-900 px-2 py-1">身份证号</TableHead>
                 <TableHead className="font-bold text-gray-900 px-2 py-1">角色</TableHead>
-                <TableHead className="font-bold text-gray-900 px-2 py-1">科室</TableHead>
+                <TableHead className="font-bold text-gray-900 px-2 py-1">所属部门</TableHead>
                 <TableHead className="font-bold text-gray-900 px-2 py-1">状态</TableHead>
                 <TableHead className="font-bold text-gray-900 px-2 py-1">创建时间</TableHead>
                 <TableHead className="font-bold text-gray-900 w-32 px-2 py-1">操作</TableHead>
@@ -319,7 +320,7 @@ const UserManager = () => {
                        '考生'}
                     </Badge>
                   </TableCell>
-                  <TableCell className="px-2 py-1">{user.department}</TableCell>
+                  <TableCell className="px-2 py-1">{options?.departments?.[user.department] || user.department}</TableCell>
                   <TableCell className="px-2 py-1">
                     <Badge variant={user.status === '1' ? 'default' : 'destructive'}>
                       {user.status === '1' ? '正常' : '停用'}
@@ -336,11 +337,20 @@ const UserManager = () => {
                         <Edit className="w-4 h-4" />
                       </Button>
                       <Button
-                        variant="outline"
+                        variant={user.status === '1' ? 'destructive' : 'default'}
                         size="sm"
-                        onClick={() => handleDeleteUser(user.id)}
+                        className="h-6 px-2 py-0 text-xs rounded-full"
+                        onClick={async () => {
+                          const newStatus = user.status === '1' ? '0' : '1';
+                          await request('/auth/users/update', {
+                            method: 'POST',
+                            body: JSON.stringify({ userId: user.id, status: newStatus })
+                          });
+                          toast({ title: '成功', description: `用户已${newStatus === '1' ? '启用' : '停用'}` });
+                          fetchUsers();
+                        }}
                       >
-                        <Trash2 className="w-4 h-4" />
+                        {user.status === '1' ? '停用' : '启用'}
                       </Button>
                     </div>
                   </TableCell>
@@ -394,7 +404,7 @@ const UserManager = () => {
         onClose={() => setIsImportOpen(false)}
         title="导入用户"
         onImport={handleImportUsers}
-        templateDownloadUrl="/templates/user_template.xlsx"
+        templateDownloadUrl="/templates/用户导入模版.xlsx"
       />
     </div>
   );

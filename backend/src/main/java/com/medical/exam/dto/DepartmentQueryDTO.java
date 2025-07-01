@@ -7,7 +7,7 @@ import lombok.Data;
 
 @Data
 public class DepartmentQueryDTO {
-    @Size(max = 50, message = "科室名称不能超过50字符")
+    @Size(max = 50, message = "题目分类名称不能超过50字符")
     private String name;
     @NotNull(message = "页码不能为空")
     @Min(value = 1, message = "页码最小为1")

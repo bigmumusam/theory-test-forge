@@ -11,39 +11,12 @@ import { useToast } from '@/hooks/use-toast';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink } from '@/components/ui/pagination';
+import { request } from '@/lib/request';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 const RoleManager = () => {
   const { toast } = useToast();
-  const [roles, setRoles] = useState([
-    {
-      id: '1',
-      roleName: '系统管理员',
-      roleKey: 'admin',
-      roleSort: 1,
-      status: '1',
-      remark: '超级管理员，拥有所有权限',
-      createTime: '2024-01-15 10:00:00'
-    },
-    {
-      id: '2',
-      roleName: '考试管理员',
-      roleKey: 'exam_admin',
-      roleSort: 2,
-      status: '1',
-      remark: '考试管理员，负责题库和考试管理',
-      createTime: '2024-01-15 10:30:00'
-    },
-    {
-      id: '3',
-      roleName: '普通考生',
-      roleKey: 'student',
-      roleSort: 3,
-      status: '1',
-      remark: '普通考生，只能参加考试',
-      createTime: '2024-01-15 11:00:00'
-    }
-  ]);
-  
+  const [roles, setRoles] = useState([]);
   const [searchKeyword, setSearchKeyword] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -56,21 +29,35 @@ const RoleManager = () => {
     remark: ''
   });
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalRows, setTotalRows] = useState(0);
 
-  const filteredRoles = roles.filter(role => {
-    const matchesSearch = role.roleName.includes(searchKeyword) || role.roleKey.includes(searchKeyword);
-    const matchesStatus = selectedStatus === 'all' || role.status === selectedStatus;
-    return matchesSearch && matchesStatus;
-  });
-
-  const paginatedRoles = filteredRoles.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  // 查询角色列表
+  const fetchRoles = async () => {
+    try {
+      const params = {
+        keyword: searchKeyword,
+        status: selectedStatus === 'all' ? undefined : selectedStatus,
+        pageNum: currentPage,
+        pageSize
+      };
+      const res = await request('/auth/roles/list', {
+        method: 'POST',
+        body: JSON.stringify(params)
+      });
+      setRoles(res.data.records || res.data.data || []);
+      setTotalPages(res.data.totalPage || 1);
+      setTotalRows(res.data.totalRow || (res.data.data ? res.data.data.length : 0));
+    } catch (error) {
+      toast({ title: '加载失败', description: String(error), variant: 'destructive' });
+    }
+  };
 
   React.useEffect(() => {
-    setTotalPages(Math.ceil(filteredRoles.length / pageSize) || 1);
-    if (currentPage > Math.ceil(filteredRoles.length / pageSize)) setCurrentPage(1);
-  }, [filteredRoles.length, pageSize]);
+    fetchRoles();
+    // eslint-disable-next-line
+  }, [currentPage, selectedStatus, searchKeyword]);
 
   const handleAddRole = () => {
     setEditingRole(null);
@@ -85,74 +72,73 @@ const RoleManager = () => {
   };
 
   const handleEditRole = (role) => {
+    console.log('编辑时选中的 role:', role);
     setEditingRole(role);
     setFormData({
       roleName: role.roleName,
       roleKey: role.roleKey,
-      roleSort: role.roleSort.toString(),
+      roleSort: role.roleSort?.toString() || '',
       status: role.status,
       remark: role.remark
     });
     setIsDialogOpen(true);
   };
 
-  const handleSaveRole = () => {
+  const handleSaveRole = async () => {
+    console.log('保存时 editingRole:', editingRole);
     if (!formData.roleName || !formData.roleKey) {
       toast({
-        title: "错误",
-        description: "请填写角色名称和角色标识",
-        variant: "destructive"
+        title: '错误',
+        description: '请填写角色名称和角色标识',
+        variant: 'destructive'
       });
       return;
     }
-
-    if (editingRole) {
-      setRoles(roles.map(role => 
-        role.id === editingRole.id 
-          ? { ...role, ...formData, roleSort: parseInt(formData.roleSort) || 0 }
-          : role
-      ));
-      toast({
-        title: "成功",
-        description: "角色信息已更新"
-      });
-    } else {
-      const newRole = {
-        id: Date.now().toString(),
-        ...formData,
-        roleSort: parseInt(formData.roleSort) || 0,
-        createTime: new Date().toLocaleString('zh-CN')
-      };
-      setRoles([...roles, newRole]);
-      toast({
-        title: "成功",
-        description: "角色已添加"
-      });
+    try {
+      if (editingRole) {
+        await request('/auth/roles/update', {
+          method: 'POST',
+          body: JSON.stringify({
+            roleId: editingRole.roleId,
+            ...formData,
+            roleSort: parseInt(formData.roleSort) || 0
+          })
+        });
+        toast({ title: '成功', description: '角色信息已更新' });
+      } else {
+        await request('/auth/roles/add', {
+          method: 'POST',
+          body: JSON.stringify({
+            ...formData,
+            roleSort: parseInt(formData.roleSort) || 0
+          })
+        });
+        toast({ title: '成功', description: '角色已添加' });
+      }
+      setIsDialogOpen(false);
+      fetchRoles();
+    } catch (error) {
+      toast({ title: '操作失败', description: String(error), variant: 'destructive' });
     }
-    
-    setIsDialogOpen(false);
   };
 
-  const handleDeleteRole = (roleId) => {
-    if (roleId === '1') {
-      toast({
-        title: "错误",
-        description: "系统管理员角色不能删除",
-        variant: "destructive"
+  const handleDeleteRole = async (roleId) => {
+    try {
+      await request('/auth/roles/delete', {
+        method: 'POST',
+        body: JSON.stringify({ roleId })
       });
-      return;
+      toast({ title: '成功', description: '角色已删除' });
+      fetchRoles();
+    } catch (error) {
+      toast({ title: '删除失败', description: String(error), variant: 'destructive' });
     }
-    
-    setRoles(roles.filter(role => role.id !== roleId));
-    toast({
-      title: "成功",
-      description: "角色已删除"
-    });
   };
 
   const clearFilters = () => {
     setSearchKeyword('');
     setSelectedStatus('all');
+    setCurrentPage(1);
   };
 
   return (
@@ -181,12 +167,12 @@ const RoleManager = () => {
                 />
               </div>
               <div>
-                <Label htmlFor="roleKey">角色标识</Label>
+                <Label htmlFor="roleKey">角色代码</Label>
                 <Input
                   id="roleKey"
                   value={formData.roleKey}
                   onChange={(e) => setFormData({...formData, roleKey: e.target.value})}
-                  placeholder="请输入角色标识"
+                  placeholder="请输入角色代码"
                 />
               </div>
               <div>
@@ -271,8 +257,7 @@ const RoleManager = () => {
             <TableHeader>
               <TableRow>
                 <TableHead>角色名称</TableHead>
-                <TableHead>角色标识</TableHead>
-                <TableHead>显示顺序</TableHead>
+                <TableHead>角色代码</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead>备注</TableHead>
                 <TableHead>创建时间</TableHead>
@@ -280,11 +265,10 @@ const RoleManager = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedRoles.map(role => (
-                <TableRow key={role.id}>
+              {roles.map(role => (
+                <TableRow key={role.roleId}>
                   <TableCell className="font-medium">{role.roleName}</TableCell>
                   <TableCell>{role.roleKey}</TableCell>
-                  <TableCell>{role.roleSort}</TableCell>
                   <TableCell>
                     <Badge variant={role.status === '1' ? 'default' : 'destructive'}>
                       {role.status === '1' ? '正常' : '停用'}
@@ -301,14 +285,24 @@ const RoleManager = () => {
                       >
                         <Edit className="w-4 h-4" />
                       </Button>
+                      <Popover>
+                        <PopoverTrigger asChild>
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleDeleteRole(role.id)}
-                        disabled={role.id === '1'}
+                        disabled={role.roleId === '1'}
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="end" className="w-60 text-center">
+                          <div className="mb-2">确定要删除该角色？</div>
+                          <div className="flex justify-center gap-2">
+                            <Button size="sm" variant="outline" onClick={() => document.activeElement.blur()}>取消</Button>
+                            <Button size="sm" variant="destructive" onClick={() => { handleDeleteRole(role.roleId); document.activeElement.blur(); }}>删除</Button>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -317,7 +311,7 @@ const RoleManager = () => {
           </Table>
         </div>
 
-        {filteredRoles.length === 0 && (
+        {roles.length === 0 && (
           <div className="text-center py-8 text-gray-500">
             没有找到符合条件的角色
           </div>
@@ -326,7 +320,7 @@ const RoleManager = () => {
 
       <div className="mt-6 flex flex-row justify-between items-center flex-nowrap gap-4">
         <p className="text-sm text-gray-600 whitespace-nowrap">
-          显示 {(currentPage - 1) * pageSize + 1} 到 {Math.min(currentPage * pageSize, filteredRoles.length)} 条，共 {filteredRoles.length} 条记录
+          显示 {(currentPage - 1) * pageSize + 1} 到 {Math.min(currentPage * pageSize, totalRows)} 条，共 {totalRows} 条记录
         </p>
         <Pagination>
           <PaginationContent>

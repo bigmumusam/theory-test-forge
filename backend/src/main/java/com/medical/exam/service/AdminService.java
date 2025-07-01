@@ -1,306 +1,418 @@
 package com.medical.exam.service;
 
-import com.medical.exam.dto.DepartmentQueryDTO;
+import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.bean.copier.CopyOptions;
+import com.medical.exam.dto.*;
+import com.medical.exam.entity.*;
+import com.medical.exam.entity.table.SysLogTableDef;
+import com.medical.exam.vo.*;
+import com.medical.exam.mapper.*;
+import com.medical.exam.security.JwtAccessContext;
+import com.medical.exam.vo.CustomToken;
+import com.medical.exam.vo.ExamCategoryVo;
+import com.medical.exam.vo.Options;
+import com.mybatisflex.core.paginate.Page;
+import com.mybatisflex.core.query.QueryWrapper;
+import com.mybatisflex.core.row.Db;
+import com.mybatisflex.core.row.Row;
+import com.mybatisflex.core.row.RowUtil;
+import jakarta.annotation.Resource;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.stream.Collectors;
+
+import static com.medical.exam.entity.table.ExamAnswerTableDef.EXAM_ANSWER;
+import static com.medical.exam.entity.table.ExamCategoryTableDef.EXAM_CATEGORY;
+import static com.medical.exam.entity.table.ExamConfigTableDef.EXAM_CONFIG;
+import static com.medical.exam.entity.table.ExamPaperTableDef.EXAM_PAPER;
+import static com.medical.exam.entity.table.ExamRecordTableDef.EXAM_RECORD;
+import static com.medical.exam.entity.table.ExamQuestionTableDef.EXAM_QUESTION;
+import static com.medical.exam.entity.table.ExamPaperQuestionTableDef.EXAM_PAPER_QUESTION;
+import static com.medical.exam.entity.table.SysDepartmentTableDef.SYS_DEPARTMENT;
+import static com.medical.exam.entity.table.SysLogTableDef.SYS_LOG;
+import static com.medical.exam.entity.table.SysRoleTableDef.SYS_ROLE;
+import static com.medical.exam.entity.table.SysUserTableDef.SYS_USER;
+import static com.mybatisflex.core.query.QueryMethods.*;
+
 
 @Service
 public class AdminService {
 
+    @Resource
+    private SysRoleMapper sysRoleMapper;
+    @Resource
+    private SysDepartmentMapper sysDepartmentMapper;
+    @Resource
+    private ExamCategoryMapper examCategoryMapper;
+    @Resource
+    private ExamQuestionMapper examQuestionMapper;
+    @Resource
+    private ExamConfigMapper examConfigMapper;
+    @Resource
+    private ExamPaperMapper examPaperMapper;
+
+    @Resource
+    private ExamPaperQuestionMapper examPaperQuestionMapper;
+
+    @Resource
+    private ExamRecordMapper examRecordMapper;
+
+    @Resource
+    private SysLogMapper sysLogMapper;
+    @Autowired
+    private ExamAnswerMapper examAnswerMapper;
+    @Autowired
+    private SysUserMapper sysUserMapper;
+
     // 考试结果管理
-    public Map<String, Object> getExamResults(String category, String status, String keyword, Integer page, Integer size) {
+
+    /**
+     * select
+     * count(record_id),
+     * count(distinct (user_id)),
+     * avg(score),
+     * sum(case when score >= 60 then 1 else 0 end)/count(record_id) as pass_count
+     * from exam_record where status='completed';
+     * @return
+     */
+    public ExamResultSummaryVo getExamResultsSummary() {
+        String sql = """
+                select count(record_id) as examCount,
+                 count(distinct (user_id)) as participantCount,
+                 avg(score) avgScore,
+                 sum(case when score >= 60 then 1 else 0 end)/count(record_id) as pass_count
+                 from exam_record where status='completed';
+                """;
+        Row row = Db.selectOneBySql( sql);
+        return RowUtil.toEntity(row, ExamResultSummaryVo.class);
+    }
+
+    public Page<ExamResultVo> getExamResults(ExamResultQueryDTO request) {
         // 模拟分页数据
-        List<Map<String, Object>> results = new ArrayList<>();
-        
-        Map<String, Object> result1 = new HashMap<>();
-        result1.put("id", "1");
-        result1.put("userName", "张医生");
-        result1.put("userId", "110101199001011111");
-        result1.put("examName", "消化内科理论考试");
-        result1.put("category", "消化内科");
-        result1.put("score", 85);
-        result1.put("totalScore", 100);
-        result1.put("duration", 75);
-        result1.put("status", "completed");
-        result1.put("startTime", "2024-01-15 10:30:00");
-        result1.put("endTime", "2024-01-15 11:45:00");
-        results.add(result1);
-
-        Map<String, Object> result2 = new HashMap<>();
-        result2.put("id", "2");
-        result2.put("userName", "李护士");
-        result2.put("userId", "110101199002022222");
-        result2.put("examName", "肝胆外科理论考试");
-        result2.put("category", "肝胆外科");
-        result2.put("score", 78);
-        result2.put("totalScore", 100);
-        result2.put("duration", 90);
-        result2.put("status", "completed");
-        result2.put("startTime", "2024-01-15 14:30:00");
-        result2.put("endTime", "2024-01-15 16:00:00");
-        results.add(result2);
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("data", results);
-        response.put("total", results.size());
-        response.put("page", page);
-        response.put("size", size);
-        
-        return response;
+        return examRecordMapper.paginateAs(request.getPageNum(),request.getPageSize(),
+                QueryWrapper.create()
+                        .select(EXAM_RECORD.RECORD_ID,SYS_USER.USER_NAME,SYS_USER.DEPARTMENT.as("categoryName"),SYS_USER.ID_NUMBER,EXAM_RECORD.EXAM_NAME
+                                ,EXAM_RECORD.END_TIME.as("examDate"),EXAM_RECORD.DURATION,EXAM_RECORD.SCORE,EXAM_RECORD.STATUS,EXAM_RECORD.RETAKE)
+                        .leftJoin(SYS_USER).on(SYS_USER.USER_ID.eq(EXAM_RECORD.USER_ID))
+                        .leftJoin(EXAM_PAPER).on(EXAM_PAPER.PAPER_ID.eq(EXAM_RECORD.PAPER_ID))
+                        .where(SYS_USER.USER_NAME.like(request.getKeyword()).or(SYS_USER.ID_NUMBER.like(request.getKeyword())))
+                        .and(EXAM_PAPER.CATEGORY_ID.eq(request.getCategory()))
+                        .and(EXAM_RECORD.STATUS.eq(request.getStatus())),
+                ExamResultVo.class);
     }
 
-    public Map<String, Object> getExamResultDetail(String id) {
-        Map<String, Object> result = new HashMap<>();
-        result.put("id", id);
-        result.put("userName", "张医生");
-        result.put("userId", "110101199001011111");
-        result.put("examName", "消化内科理论考试");
-        result.put("category", "消化内科");
-        result.put("score", 85);
-        result.put("totalScore", 100);
-        result.put("duration", 75);
-        result.put("status", "completed");
-        result.put("startTime", "2024-01-15 10:30:00");
-        result.put("endTime", "2024-01-15 11:45:00");
-        
-        // 答题详情
-        List<Map<String, Object>> answers = new ArrayList<>();
-        Map<String, Object> answer1 = new HashMap<>();
-        answer1.put("questionId", "1");
-        answer1.put("questionContent", "胃溃疡最常见的并发症是？");
-        answer1.put("userAnswer", "1");
-        answer1.put("correctAnswer", "1");
-        answer1.put("isCorrect", true);
-        answer1.put("score", 2);
-        answers.add(answer1);
-        
-        result.put("answers", answers);
-        return result;
+    public  List<ExamDetailVo> getExamResultDetail(String recordId) {
+        return   examAnswerMapper.selectListByQueryAs(QueryWrapper.create()
+                       .select(EXAM_QUESTION.QUESTION_TYPE, EXAM_QUESTION.QUESTION_CONTENT,EXAM_QUESTION.QUESTION_OPTIONS,
+                               EXAM_QUESTION.CORRECT_ANSWER,EXAM_ANSWER.USER_ANSWER,EXAM_ANSWER.IS_CORRECT,
+                               EXAM_ANSWER.SCORE)
+                .innerJoin(EXAM_QUESTION).on(EXAM_QUESTION.QUESTION_ID.eq(EXAM_ANSWER.QUESTION_ID))
+               .where(EXAM_ANSWER.RECORD_ID.eq(recordId)),ExamDetailVo.class);
     }
 
-    public void arrangeRetakeExam(String recordId, Long userId) {
-        System.out.println("安排重新考试，记录ID: " + recordId + ", 操作用户: " + userId);
-    }
-
-    public void batchArrangeRetakeExam(Map<String, Object> request, Long userId) {
+    public void batchArrangeRetakeExam(Map<String, Object> request) {
+        CustomToken customToken = JwtAccessContext.getLoginInfo();
         List<String> recordIds = (List<String>) request.get("recordIds");
-        System.out.println("批量安排重新考试，记录数: " + recordIds.size() + ", 操作用户: " + userId);
+        recordIds.forEach(recordId -> {
+            examRecordMapper.update(ExamRecord.builder()
+                    .recordId(recordId)
+                    .retake(1)
+                    .build());
+        });
     }
 
     // 题目管理
-    public Map<String, Object> getQuestions(String category, String difficulty, String keyword, Integer page, Integer size) {
-        List<Map<String, Object>> questions = new ArrayList<>();
-        
-        Map<String, Object> question1 = new HashMap<>();
-        question1.put("id", "1");
-        question1.put("questionType", "choice");
-        question1.put("questionContent", "胃溃疡最常见的并发症是？");
-        question1.put("questionOptions", Arrays.asList("穿孔", "出血", "幽门梗阻", "癌变"));
-        question1.put("correctAnswer", "1");
-        question1.put("category", "消化内科");
-        question1.put("difficulty", "medium");
-        question1.put("score", 2);
-        question1.put("createTime", "2024-01-15 10:00:00");
-        questions.add(question1);
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("data", questions);
-        response.put("total", questions.size());
-        response.put("page", page);
-        response.put("size", size);
-        
-        return response;
+    public void addQuestion(QuestionDTO request) {
+        CustomToken customToken = JwtAccessContext.getLoginInfo();
+        examQuestionMapper.insert(ExamQuestion.builder()
+            .questionType(request.getQuestionType())
+            .questionContent(request.getQuestionContent())
+            .questionOptions(request.getQuestionOptions())
+            .correctAnswer(request.getCorrectAnswer())
+            .categoryId(request.getCategoryId())
+            .difficulty(request.getDifficulty())
+            .score(request.getScore())
+            .status("1")
+            .remark(request.getRemark())
+            .createBy(customToken.getUserName())
+            .build());
     }
 
-    public void addQuestion(Map<String, Object> request, Long userId) {
-        System.out.println("添加题目: " + request + ", 操作用户: " + userId);
-    }
-
-    public void updateQuestion(String id, Map<String, Object> request, Long userId) {
-        System.out.println("更新题目ID: " + id + ", 数据: " + request + ", 操作用户: " + userId);
+    public void updateQuestion(QuestionDTO request) {
+        CustomToken customToken = JwtAccessContext.getLoginInfo();
+        examQuestionMapper.update(ExamQuestion.builder()
+            .questionId(request.getQuestionId())
+            .questionType(request.getQuestionType())
+            .questionContent(request.getQuestionContent())
+            .questionOptions(request.getQuestionOptions())
+            .correctAnswer(request.getCorrectAnswer())
+            .categoryId(request.getCategoryId())
+            .difficulty(request.getDifficulty())
+            .score(request.getScore())
+            .status(request.getStatus())
+            .remark(request.getRemark())
+            .updateBy(customToken.getUserName())
+            .build());
     }
 
     public void deleteQuestion(String id) {
-        System.out.println("删除题目ID: " + id);
+        examQuestionMapper.deleteById(id);
     }
 
-    public Map<String, Object> importQuestions(MultipartFile file, Long userId) {
-        System.out.println("导入题目文件: " + file.getOriginalFilename() + ", 操作用户: " + userId);
-        
+    public Page<ExamQuestion> getQuestions(QuestionQueryDTO request) {
+        QueryWrapper queryWrapper = QueryWrapper.create()
+            .where( EXAM_QUESTION.CATEGORY_ID.eq(request.getCategoryId()))
+            .and(EXAM_QUESTION.QUESTION_TYPE.eq(request.getQuestionType()))
+            .and(EXAM_QUESTION.DIFFICULTY.eq(request.getDifficulty()))
+            .and(EXAM_QUESTION.SCORE.ge(request.getScoreMin()))
+            .and(EXAM_QUESTION.SCORE.le(request.getScoreMax()))
+            .and(EXAM_QUESTION.QUESTION_CONTENT.like(request.getKeyword()));
+        return examQuestionMapper.paginate(request.getPageNum(), request.getPageSize(), queryWrapper);
+    }
+
+    public Map<String, Object> importQuestions(MultipartFile file) {
+        CustomToken customToken = JwtAccessContext.getLoginInfo();
+        System.out.println("导入题目文件: " + file.getOriginalFilename() + ", 操作用户: " + customToken.getUserName());
         Map<String, Object> result = new HashMap<>();
         result.put("successCount", 10);
         result.put("failCount", 0);
         result.put("total", 10);
-        
         return result;
     }
 
     public void batchDeleteQuestions(Map<String, Object> request) {
         List<String> questionIds = (List<String>) request.get("questionIds");
-        System.out.println("批量删除题目，数量: " + questionIds.size());
+        if (questionIds != null && !questionIds.isEmpty()) {
+            examQuestionMapper.deleteBatchByIds(questionIds);
+        }
     }
 
 
 
 
 
-    // 科室/分类管理
-    public List<Map<String, Object>> getDepartments(DepartmentQueryDTO request) {
-        List<Map<String, Object>> departments = new ArrayList<>();
-        
-        Map<String, Object> dept1 = new HashMap<>();
-        dept1.put("id", "1");
-        dept1.put("name", "消化内科");
-        dept1.put("code", "DEPT_01");
-        departments.add(dept1);
-
-        Map<String, Object> dept2 = new HashMap<>();
-        dept2.put("id", "2");
-        dept2.put("name", "肝胆外科");
-        dept2.put("code", "DEPT_02");
-        departments.add(dept2);
-
-        return departments;
+    // 题目分类/分类管理
+    public void addCategory(CategoryDTO request) {
+        CustomToken customToken = JwtAccessContext.getLoginInfo();
+        examCategoryMapper.insert(ExamCategory.builder()
+                        .categoryName(request.getCategoryName())
+                        .remark(request.getRemark())
+                        .status("1")
+                        .createBy(customToken.getUserName())
+                .build());
     }
 
-    public void addDepartment(Map<String, Object> request, Long userId) {
-        System.out.println("添加科室: " + request + ", 操作用户: " + userId);
+    public void updateCategory(CategoryDTO request) {
+        CustomToken customToken = JwtAccessContext.getLoginInfo();
+        examCategoryMapper.update(
+                ExamCategory.builder()
+                        .categoryId(request.getCategoryId())
+                        .categoryName(request.getCategoryName())
+                        .remark(request.getRemark())
+                        .updateBy(customToken.getUserName())
+                        .build()
+        );
     }
 
-    public List<Map<String, Object>> getCategories() {
-        List<Map<String, Object>> categories = new ArrayList<>();
-        
-        Map<String, Object> cat1 = new HashMap<>();
-        cat1.put("id", "1");
-        cat1.put("name", "消化内科");
-        cat1.put("code", "CAT_01");
-        cat1.put("questionCount", 10);
-        categories.add(cat1);
+    public Page<ExamCategoryVo> getCategories(CategoryQueryDTO categoryQueryDTO) {
+        return examCategoryMapper.paginateAs(categoryQueryDTO.getPageNum(),categoryQueryDTO.getPageSize(),
+                QueryWrapper.create()
+                        .select(EXAM_CATEGORY.CATEGORY_ID,EXAM_CATEGORY.CATEGORY_NAME,EXAM_CATEGORY.REMARK,count(EXAM_QUESTION.CATEGORY_ID).as("questionCount"))
+                        .leftJoin(EXAM_QUESTION).on(EXAM_CATEGORY.CATEGORY_ID.eq(EXAM_QUESTION.CATEGORY_ID))
+                        .where(EXAM_CATEGORY.STATUS.eq("1"))
+                        .groupBy(EXAM_CATEGORY.CATEGORY_ID,EXAM_CATEGORY.CATEGORY_NAME,EXAM_CATEGORY.REMARK)
+                        .orderBy(EXAM_CATEGORY.CATEGORY_ID.asc()),ExamCategoryVo.class);
 
-        return categories;
     }
 
-    public void addCategory(Map<String, Object> request, Long userId) {
-        System.out.println("添加分类: " + request + ", 操作用户: " + userId);
+
+    public List<Object> getDepartments(DepartmentQueryDTO request) {
+
+        return sysDepartmentMapper.selectObjectListByQuery(QueryWrapper.create().select(SYS_DEPARTMENT.DEPT_NAME));
+    }
+
+    public void addDepartment(DepartmentDTO departmentDTO) {
+        CustomToken customToken = JwtAccessContext.getLoginInfo();
+        sysDepartmentMapper.insert(SysDepartment.builder()
+                .deptName(departmentDTO.getDeptName())
+                .remark(departmentDTO.getRemark())
+                .createDept(departmentDTO.getDeptName())
+                .build());
     }
 
     // 考试配置管理
-    public Map<String, Object> getExamConfigs(String category, String status, Integer page, Integer size) {
-        List<Map<String, Object>> configs = new ArrayList<>();
-        
-        Map<String, Object> config1 = new HashMap<>();
-        config1.put("id", "1");
-        config1.put("examName", "消化内科理论考试");
-        config1.put("category", "消化内科");
-        config1.put("duration", 30);
-        config1.put("totalScore", 100);
-        config1.put("passScore", 60);
-        config1.put("questionCount", 50);
-        config1.put("status", "1");
-        configs.add(config1);
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("data", configs);
-        response.put("total", configs.size());
-        response.put("page", page);
-        response.put("size", size);
-        
-        return response;
+    public Page<ExamConfig> getExamConfigs(ExamConfigDTO request) {
+       return examConfigMapper.paginate(request.getPageNum(),request.getPageSize(),QueryWrapper.create()
+               .where(EXAM_CONFIG.STATUS.eq("1")).orderBy(EXAM_CONFIG.CREATE_TIME.desc()));
     }
 
-    public void addExamConfig(Map<String, Object> request, Long userId) {
-        System.out.println("添加考试配置: " + request + ", 操作用户: " + userId);
+    public void addExamConfig(ExamConfigDTO request) {
+        CustomToken customToken = JwtAccessContext.getLoginInfo();
+        ExamConfig examConfig = new ExamConfig();
+        BeanUtil.copyProperties(request,examConfig, CopyOptions.create().ignoreNullValue());
+        examConfig.setCreateBy(customToken.getUserName());
+        examConfig.setStatus("1");
+        examConfigMapper.insert(examConfig);
+    }
+    public void updateExamConfig(ExamConfigDTO request) {
+        CustomToken customToken = JwtAccessContext.getLoginInfo();
+        ExamConfig examConfig = new ExamConfig();
+        BeanUtil.copyProperties(request, examConfig, CopyOptions.create().ignoreNullValue());
+        examConfig.setUpdateBy(customToken.getUserName());
+        examConfigMapper.update(examConfig);
+    }
+    public void deleteExamConfig(String id) {
+        examConfigMapper.deleteById(id);
     }
 
+    @Transactional(rollbackFor = Exception.class)
     // 试卷生成
-    public Map<String, Object> generateExamPaper(Map<String, Object> request, Long userId) {
-        System.out.println("生成试卷: " + request + ", 操作用户: " + userId);
+    public void generateExamPaper(ExamPaperDTO request) {
+        CustomToken customToken = JwtAccessContext.getLoginInfo();
+        // 1. 插入 exam_paper
+        ExamPaper paper = new ExamPaper();
+        paper.setPaperName(request.getPaperName());
+        paper.setConfigId(request.getConfigId());
+        paper.setCategoryId(request.getCategoryId());
+        paper.setTotalQuestions(request.getTotalQuestions());
+        paper.setTotalScore(request.getTotalScore());
+        paper.setDuration(request.getDuration());
+        paper.setCreateBy(customToken.getUserName());
+        paper.setStatus("1");
+        examPaperMapper.insert(paper);
+
+        // 2. 插入 exam_paper_question
+        List<ExamPaperQuestion> paperQuestions = new ArrayList<>();
+        if (request.getExamPaperList() != null) {
+            for (var q : request.getExamPaperList()) {
+                ExamPaperQuestion pq = new ExamPaperQuestion();
+                pq.setPaperId(paper.getPaperId());
+                pq.setQuestionId(q.getQuestionId());
+                pq.setQuestionOrder(q.getQuestionOrder());
+                pq.setQuestionScore(q.getScore());
+                paperQuestions.add(pq);
+            }
+            if (!paperQuestions.isEmpty()) {
+                examPaperQuestionMapper.insertBatch(paperQuestions);
+            }
+        }
+    }
+
+    public Page<ExamPaperVo> getGeneratedPapers(ExamPaperQueryDTO examPaperQueryDTO) {
+        QueryWrapper queryWrapper = QueryWrapper.create()
+            .select(
+                EXAM_PAPER.PAPER_ID,
+                EXAM_PAPER.PAPER_NAME,
+                EXAM_PAPER.CATEGORY_ID,
+                EXAM_CATEGORY.CATEGORY_NAME,
+                EXAM_PAPER.TOTAL_QUESTIONS,
+                EXAM_PAPER.TOTAL_SCORE,
+                EXAM_PAPER.DURATION,
+                EXAM_PAPER.USAGE_COUNT,
+                EXAM_PAPER.STATUS,
+                EXAM_PAPER.CREATE_BY,
+                EXAM_PAPER.CREATE_TIME,
+                EXAM_PAPER.UPDATE_BY,
+                EXAM_PAPER.UPDATE_TIME,
+                EXAM_PAPER.REMARK
+            )
+            .from(EXAM_PAPER)
+            .leftJoin(EXAM_CATEGORY).on(EXAM_PAPER.CATEGORY_ID.eq(EXAM_CATEGORY.CATEGORY_ID));
         
-        Map<String, Object> paper = new HashMap<>();
-        paper.put("id", System.currentTimeMillis());
-        paper.put("name", request.get("name"));
-        paper.put("category", request.get("category"));
-        paper.put("totalQuestions", request.get("choiceCount") + "+" + request.get("judgmentCount"));
-        paper.put("totalScore", "100");
-        paper.put("duration", request.get("duration"));
-        paper.put("generateTime", LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        // 试卷名称模糊查询
+        if (examPaperQueryDTO.getPaperName() != null && !examPaperQueryDTO.getPaperName().trim().isEmpty()) {
+            queryWrapper.and(EXAM_PAPER.PAPER_NAME.like("%" + examPaperQueryDTO.getPaperName().trim() + "%"));
+        }
         
-        return paper;
+        // 科室筛选
+        if (examPaperQueryDTO.getCategoryId() != null && !examPaperQueryDTO.getCategoryId().trim().isEmpty()) {
+            queryWrapper.and(EXAM_PAPER.CATEGORY_ID.eq(examPaperQueryDTO.getCategoryId()));
+        }
+        
+        // 状态筛选
+        if (examPaperQueryDTO.getStatus() != null && !examPaperQueryDTO.getStatus().trim().isEmpty()) {
+            queryWrapper.and(EXAM_PAPER.STATUS.eq(examPaperQueryDTO.getStatus()));
+        }
+        
+        // 按创建时间倒序排列
+        queryWrapper.orderBy(EXAM_PAPER.CREATE_TIME.desc());
+        
+        return examPaperMapper.paginateAs(
+            examPaperQueryDTO.getPageNum(),
+            examPaperQueryDTO.getPageSize(),
+            queryWrapper,
+            ExamPaperVo.class
+        );
     }
 
-    public Map<String, Object> getGeneratedPapers(String category, String status, Integer page, Integer size) {
-        // 示例实现
-        Map<String, Object> result = new HashMap<>();
-        result.put("data", Collections.emptyList());
-        result.put("total", 0);
-        result.put("page", page);
-        result.put("size", size);
-        return result;
+    public List<ExamQuestion> getGeneratedPaperDetail(String paperId) {
+        List<Object> questionIds = examPaperQuestionMapper.selectObjectListByQuery(QueryWrapper.create()
+                .select(EXAM_PAPER_QUESTION.QUESTION_ID)
+                .where(EXAM_PAPER_QUESTION.PAPER_ID.eq(paperId)));
+        return examQuestionMapper.selectListByQuery(QueryWrapper.create().where(EXAM_QUESTION.QUESTION_ID.in(questionIds)));
     }
 
-    public Map<String, Object> getGeneratedPaperDetail(String id) {
-        // 示例实现
-        Map<String, Object> paper = new HashMap<>();
-        paper.put("id", id);
-        paper.put("name", "示例试卷");
-        paper.put("category", "消化内科");
-        paper.put("questionCount", 50);
-        paper.put("totalScore", 100);
-        paper.put("generateTime", "2024-01-15 10:00:00");
-        return paper;
+    public void updateGeneratedPaper(ExamPaperDTO examPaperDTO) {
+        examPaperMapper.update(ExamPaper.builder()
+                        .status(examPaperDTO.getStatus())
+                        .paperId(examPaperDTO.getPaperId())
+                .build());
     }
 
-    public void deleteGeneratedPaper(String id) {
-        // 示例实现
-        System.out.println("删除试卷ID: " + id);
-    }
+    public List<ExamPaper> getAvailablePapers(AvailablePaperQueryDTO result) {
+        CustomToken customToken = JwtAccessContext.getLoginInfo();
+        // 查出所有试卷
+        List<ExamPaper> papers = examPaperMapper.selectListByQuery(QueryWrapper.create().where(EXAM_PAPER.STATUS.eq("1")));
+        //查出所有参加试考试的记录
+        List<ExamRecord> records = examRecordMapper.selectListByQuery(QueryWrapper.create()
+                .where(EXAM_RECORD.USER_ID.eq(customToken.getUserId()))
+                .and(EXAM_RECORD.RETAKE.eq(0)));
 
-    public Map<String, Object> replaceQuestion(String paperId, String questionId, Map<String, Object> request, Long userId) {
-        // 示例实现
-        Map<String, Object> result = new HashMap<>();
-        result.put("paperId", paperId);
-        result.put("oldQuestionId", questionId);
-        result.put("newQuestionId", request.get("newQuestionId"));
-        result.put("status", "replaced");
-        return result;
-    }
-
-    public Map<String, Object> getAvailableQuestions(String category, String type, String difficulty, String excludeIds, Integer page, Integer size) {
-        // 示例实现
-        Map<String, Object> result = new HashMap<>();
-        result.put("data", Collections.emptyList());
-        result.put("total", 0);
-        result.put("page", page);
-        result.put("size", size);
-        return result;
+        papers.forEach(paper -> {
+            paper.setStatus("pending");
+           records.forEach(record -> {
+               if(paper.getPaperId().equals(record.getPaperId())){
+                   paper.setStatus(record.getStatus());
+               }
+           });
+        });
+        return papers;
     }
 
     // 统计分析
-    public Map<String, Object> getDashboardStatistics() {
-        Map<String, Object> statistics = new HashMap<>();
-        
-        statistics.put("totalUsers", 125);
-        statistics.put("totalQuestions", 1200);
-        statistics.put("totalExams", 450);
-        statistics.put("todayExams", 15);
-        statistics.put("passRate", 85.5);
-        statistics.put("avgScore", 78.2);
-        
-        // 最近考试趋势
-        List<Map<String, Object>> examTrends = new ArrayList<>();
-        for (int i = 7; i >= 0; i--) {
-            Map<String, Object> trend = new HashMap<>();
-            trend.put("date", LocalDateTime.now().minusDays(i).format(DateTimeFormatter.ofPattern("MM-dd")));
-            trend.put("count", (int)(Math.random() * 20) + 5);
-            examTrends.add(trend);
-        }
-        statistics.put("examTrends", examTrends);
-        
-        return statistics;
+    public DashboardVo getDashboardStatistics() {
+        long examQuestionCount = examQuestionMapper.selectCountByQuery(QueryWrapper.create().where(EXAM_QUESTION.STATUS.eq("1")));
+        long examResultCountToday = examRecordMapper.selectCountByQuery(QueryWrapper.create().where(EXAM_RECORD.CREATE_TIME.ge(LocalDateTime.now().minusDays(1))));
+        long categoryCount = examCategoryMapper.selectCountByQuery(QueryWrapper.create().where(EXAM_CATEGORY.STATUS.eq("1")));
+        Object avgExamScore = examRecordMapper.selectObjectByQuery(QueryWrapper.create()
+                .select(avg(EXAM_RECORD.SCORE).as("avg_score"))
+                .where(EXAM_RECORD.STATUS.eq("completed")));
+
+        List<SysLog> sysLogs = sysLogMapper.selectListByQuery(QueryWrapper.create()
+                .orderBy(SYS_LOG.CREATE_TIME.desc())
+                .limit(5));
+
+        List<CategoryCount>  categorySummary = examCategoryMapper.selectListByQueryAs(QueryWrapper.create()
+                .select(EXAM_CATEGORY.CATEGORY_NAME.as("categoryName"), count(EXAM_QUESTION.QUESTION_ID).as("questionCount"))
+                        .leftJoin(EXAM_QUESTION).on(EXAM_QUESTION.CATEGORY_ID.eq(EXAM_CATEGORY.CATEGORY_ID))
+//                .where(EXAM_QUESTION.STATUS.eq("1"))
+                .groupBy(EXAM_CATEGORY.CATEGORY_NAME)
+                .orderBy(count(EXAM_QUESTION.QUESTION_ID).desc()),CategoryCount.class);
+
+        return DashboardVo.builder()
+                .questionCount((int) examQuestionCount)
+                .examResultCountToday((int)examResultCountToday)
+                .categoryCount((int)categoryCount)
+                .avgExamScore(avgExamScore== null ? "0": avgExamScore.toString())
+                .sysLogs(sysLogs)
+                .categorySummary(categorySummary)
+                .build();
     }
 
     public Map<String, Object> getExamTrends(String startDate, String endDate) {
@@ -338,9 +450,67 @@ public class AdminService {
         return performance;
     }
 
-    public void updateExamConfig(String id, Map<String, Object> request, Long aLong) {
+
+
+    public Options getOptions() {
+
+        List<SysRole> sysRoles = sysRoleMapper.selectListByQuery(QueryWrapper.create().select(SYS_ROLE.ROLE_NAME,SYS_ROLE.ROLE_KEY)
+                .where(SYS_ROLE.STATUS.eq("1")));
+
+        Map<String,String> roleMap = sysRoles.stream().collect(Collectors.toMap(SysRole::getRoleName, SysRole::getRoleKey));
+
+        List<Object> sysDepartments = sysUserMapper.selectObjectListByQuery(QueryWrapper.create().select(SYS_USER.DEPARTMENT).groupBy(SYS_USER.DEPARTMENT));
+
+        Map<String,String> departmentsMap = sysDepartments.stream().collect(Collectors.toMap(Object::toString,Object::toString));
+
+        List<ExamCategory> examCategories = examCategoryMapper.selectListByQuery(QueryWrapper.create().select(EXAM_CATEGORY.CATEGORY_ID,EXAM_CATEGORY.CATEGORY_NAME)
+                .where(EXAM_CATEGORY.STATUS.eq("1")));
+        Map<String,String> categoryMap = examCategories.stream().collect(Collectors.toMap(ExamCategory::getCategoryId,ExamCategory::getCategoryName));
+
+        return Options.builder()
+                .roles(roleMap)
+                .categories(categoryMap)
+                .departments(departmentsMap)
+                .build();
     }
 
-    public void deleteExamConfig(String id) {
+
+    public List<CategroyQuestionCountVo> getQuestionsByCategoryId(String categoryId) {
+        return examQuestionMapper.selectListByQueryAs(QueryWrapper.create()
+                .select(EXAM_QUESTION.QUESTION_TYPE,count(EXAM_QUESTION.QUESTION_ID).as("questionCount"))
+                .where(EXAM_QUESTION.STATUS.eq("1"))
+                        .and(EXAM_QUESTION.CATEGORY_ID.eq(categoryId))
+                .groupBy(EXAM_QUESTION.QUESTION_TYPE),CategroyQuestionCountVo.class);
     }
+
+    public List<ExamQuestion> getQuestionsWithCategoryId(String categoryId) {
+        return examQuestionMapper.selectListByQuery(QueryWrapper.create().where(EXAM_QUESTION.CATEGORY_ID.eq(categoryId)));
+    }
+
+    public List<ExamQuestion> getQuestionsByPaperId(String paperId) {
+        // 1. 根据试卷ID查询试卷题目关联表中的所有题目ID
+        List<Object> questionIds = examPaperQuestionMapper.selectObjectListByQuery(
+            QueryWrapper.create()
+                .select(EXAM_PAPER_QUESTION.QUESTION_ID)
+                .where(EXAM_PAPER_QUESTION.PAPER_ID.eq(paperId))
+        );
+        
+        if (questionIds == null || questionIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+        
+        // 2. 根据题目ID查询完整的题目信息
+        List<ExamQuestion> questions = examQuestionMapper.selectListByQuery(
+            QueryWrapper.create()
+                .where(EXAM_QUESTION.QUESTION_ID.in(questionIds))
+                .and(EXAM_QUESTION.STATUS.eq("1")) // 只查询有效的题目
+        );
+        
+        // 3. 随机打乱题目顺序
+        Collections.shuffle(questions);
+        
+        return questions;
+    }
+
+
 }

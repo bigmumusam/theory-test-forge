@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -50,7 +49,7 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onLogout }) =
               </div>
               <div>
                 <h1 className="text-xl font-bold text-gray-800">学员中心</h1>
-                <p className="text-sm text-gray-600">医学理论考试系统</p>
+                <p className="text-sm text-gray-600">理论考试系统</p>
               </div>
             </div>
             

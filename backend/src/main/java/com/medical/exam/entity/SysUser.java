@@ -23,7 +23,7 @@ public class SysUser  implements Serializable {
     private static final long serialVersionUID = 1L;
     
     @Id(keyType = KeyType.Generator, value = KeyGenerators.snowFlakeId)
-    private Long userId;
+    private String userId;
     private String idNumber;
     private String userName;
     private String role;

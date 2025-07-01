@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -7,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { User } from '../../types/auth';
 import { ExamPaper, Question } from '../../types/exam';
 import { useToast } from '@/hooks/use-toast';
+import { post } from '@/lib/request';
 
 interface ExamSessionProps {
   exam: ExamPaper;
@@ -19,27 +19,77 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [timeRemaining, setTimeRemaining] = useState(exam.duration * 60); // 转换为秒
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
-  const [examResult, setExamResult] = useState<{ score: number; totalScore: number } | null>(null);
+  const [examResult, setExamResult] = useState<{ score: number; totalScore: number; correctCount: number; totalQuestions: number } | null>(null);
+  const [isExamCompleted, setIsExamCompleted] = useState(false);
+  const [showRefreshWarning, setShowRefreshWarning] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const { toast } = useToast();
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const currentQuestion = exam.questions[currentQuestionIndex];
   const progress = ((currentQuestionIndex + 1) / exam.questions.length) * 100;
 
+  // 防止页面刷新
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!isExamCompleted) {
+        e.preventDefault();
+        e.returnValue = '考试进行中，刷新页面将丢失答题进度，确定要离开吗？';
+        return e.returnValue;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (!isExamCompleted && document.visibilityState === 'hidden') {
+        // 页面即将被隐藏（如切换标签页、最小化等）
+        toast({
+          title: "考试提醒",
+          description: "请勿切换标签页或最小化窗口，以免影响考试",
+          variant: "destructive"
+        });
+      }
+    };
+
+    // 监听键盘快捷键刷新
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isExamCompleted && (e.ctrlKey || e.metaKey) && e.key === 'r') {
+        e.preventDefault();
+        setShowRefreshWarning(true);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('keydown', handleKeyDown);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isExamCompleted, toast]);
+
   // 倒计时
   useEffect(() => {
-    const timer = setInterval(() => {
+    if (!isExamCompleted) {
+      timerRef.current = setInterval(() => {
       setTimeRemaining(prev => {
         if (prev <= 1) {
-          clearInterval(timer);
+            clearInterval(timerRef.current!);
           handleAutoSubmit();
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
+    }
 
-    return () => clearInterval(timer);
-  }, []);
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, [isExamCompleted]);
 
   const formatTime = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
@@ -80,24 +130,70 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
     }
   };
 
-  const calculateScore = (): { score: number; totalScore: number } => {
+  const calculateScore = (): { score: number; totalScore: number; correctCount: number; totalQuestions: number } => {
     let score = 0;
+    let correctCount = 0;
     const totalScore = exam.questions.reduce((sum, q) => sum + q.score, 0);
 
     exam.questions.forEach(question => {
       const userAnswer = answers[question.id];
       if (userAnswer !== undefined && userAnswer === question.correctAnswer) {
         score += question.score;
+        correctCount++;
       }
     });
 
-    return { score, totalScore };
+    return { score, totalScore, correctCount, totalQuestions: exam.questions.length };
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    try {
+      // 准备提交数据
+      const submitData = {
+        recordId: exam.id, // 使用试卷ID作为记录ID
+        answers: exam.questions.map(question => ({
+          questionId: question.id,
+          userAnswer: answers[question.id] !== undefined ? answers[question.id].toString() : ''
+        }))
+      };
+
+      // 调用后端提交接口
+      const response = await post('/exam/submit', submitData);
+      
+      if (response.code === 200) {
+        // 计算前端显示用的分数
     const result = calculateScore();
     setExamResult(result);
+        setIsExamCompleted(true);
     setShowSubmitDialog(true);
+        
+        // 停止计时器
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+        }
+        
+        toast({
+          title: "提交成功",
+          description: "您的考试已成功提交",
+        });
+      } else {
+        toast({
+          title: "提交失败",
+          description: response.message || "考试提交失败，请重试",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('考试提交失败:', error);
+      toast({
+        title: "提交失败",
+        description: "考试提交失败，请重试",
+        variant: "destructive"
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleAutoSubmit = () => {
@@ -112,7 +208,7 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
   const handleConfirmSubmit = () => {
     toast({
       title: "考试完成",
-      description: `您的得分：${examResult?.score}/${examResult?.totalScore}分`,
+      description: `您的得分：${examResult?.score}分`,
     });
     onComplete();
   };
@@ -268,9 +364,10 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
                 {currentQuestionIndex === exam.questions.length - 1 ? (
                   <Button 
                     onClick={handleSubmit}
+                    disabled={submitting}
                     className="bg-green-600 hover:bg-green-700"
                   >
-                    提交试卷
+                    {submitting ? '提交中...' : '提交试卷'}
                   </Button>
                 ) : (
                   <Button 
@@ -328,9 +425,10 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
               
               <Button 
                 onClick={handleSubmit}
+                disabled={submitting}
                 className="w-full mt-6 bg-green-600 hover:bg-green-700"
               >
-                提交试卷
+                {submitting ? '提交中...' : '提交试卷'}
               </Button>
             </Card>
           </div>
@@ -357,26 +455,20 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
               </div>
               
               <div className="bg-gray-50 p-6 rounded-lg text-center">
-                <p className="text-3xl font-bold text-blue-600 mb-2">
-                  {examResult.score}/{examResult.totalScore}
+                <p className="text-lg font-bold text-blue-600 mb-2">
+                  正确数量：{examResult.correctCount}/{examResult.totalQuestions}
                 </p>
-                <p className="text-lg text-gray-600 mb-1">
-                  {Math.round((examResult.score / examResult.totalScore) * 100)}%
-                </p>
-                <p className={`text-sm font-medium ${
-                  (examResult.score / examResult.totalScore) >= 0.6 ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  {(examResult.score / examResult.totalScore) >= 0.6 ? '考试通过' : '考试未通过'}
+                <p className="text-2xl font-bold text-green-600 mb-2">
+                  您的分数是 {examResult.score}分
                 </p>
               </div>
-              
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-600">答题数量：</span>
                   <span>{getAnsweredCount()}/{exam.questions.length}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600">用时：</span>
+                  <span className="text-gray-600">考试用时：</span>
                   <span>{formatTime((exam.duration * 60) - timeRemaining)}</span>
                 </div>
               </div>
@@ -386,6 +478,68 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
               </Button>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 刷新警告弹窗 */}
+      <Dialog open={showRefreshWarning} onOpenChange={setShowRefreshWarning}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+              <span>考试进行中</span>
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="text-center">
+              <div className="w-16 h-16 mx-auto bg-red-100 rounded-full flex items-center justify-center mb-4">
+                <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">确定要刷新页面吗？</h3>
+              <p className="text-gray-600 text-sm">
+                刷新页面将丢失当前答题进度，需要重新开始考试。
+              </p>
+            </div>
+            
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <div className="flex items-start space-x-3">
+                <svg className="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div className="text-sm text-blue-800">
+                  <p className="font-medium mb-1">温馨提示：</p>
+                  <p>• 已答题：{getAnsweredCount()}/{exam.questions.length} 题</p>
+                  <p>• 剩余时间：{formatTime(timeRemaining)}</p>
+                  <p>• 刷新后将重新开始考试</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex space-x-3">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowRefreshWarning(false)}
+                className="flex-1"
+              >
+                继续考试
+              </Button>
+              <Button 
+                variant="destructive"
+                onClick={() => {
+                  setShowRefreshWarning(false);
+                  window.location.reload();
+                }}
+                className="flex-1"
+              >
+                确认刷新
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
