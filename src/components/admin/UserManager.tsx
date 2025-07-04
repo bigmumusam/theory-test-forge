@@ -41,7 +41,7 @@ const UserManager = () => {
   const fetchUsers = async () => {
     try {
       const params = {
-        pageNum: currentPage,
+        pageNumber: currentPage,
         pageSize,
         keyword: searchKeyword,
         role: selectedRole === 'all' ? undefined : selectedRole,
@@ -333,6 +333,7 @@ const UserManager = () => {
                         variant="outline"
                         size="sm"
                         onClick={() => handleEditUser(user)}
+                        disabled={user.role === 'admin'}
                       >
                         <Edit className="w-4 h-4" />
                       </Button>
@@ -349,6 +350,7 @@ const UserManager = () => {
                           toast({ title: '成功', description: `用户已${newStatus === '1' ? '启用' : '停用'}` });
                           fetchUsers();
                         }}
+                        disabled={user.role === 'admin'}
                       >
                         {user.status === '1' ? '停用' : '启用'}
                       </Button>

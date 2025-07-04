@@ -1,9 +1,8 @@
-
 export interface User {
   id: string;
   name: string;
   idNumber: string;
-  role: 'admin' | 'student';
+  role: 'admin' | 'exam_admin' | 'student';
   department?: string;
   status: '0' | '1';
   createTime?: string;
@@ -13,7 +12,7 @@ export interface User {
 export interface UserCreateRequest {
   name: string;
   idNumber: string;
-  role: 'admin' | 'student';
+  role: 'admin' | 'exam_admin' | 'student';
   department?: string;
 }
 
@@ -21,7 +20,7 @@ export interface UserUpdateRequest {
   id: string;
   name: string;
   idNumber: string;
-  role: 'admin' | 'student';
+  role: 'admin' | 'exam_admin' | 'student';
   department?: string;
   status: '0' | '1';
 }

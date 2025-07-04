@@ -30,10 +30,12 @@ public class ExamConfig {
     private Integer choiceCount;
     //判断题数量
     private Integer judgmentCount;
+    private Integer multiCount;
     //选择题分数
     private Integer choiceScore;
     //判断题分数
     private Integer judgmentScore;
+    private Integer multiScore;
     private String status;
     private String createDept;
     private String createBy;

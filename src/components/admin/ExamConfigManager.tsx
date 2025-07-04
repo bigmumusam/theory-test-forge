@@ -22,8 +22,9 @@ const ExamConfigManager: React.FC = () => {
     name: '',
     categories: [],
     questionTypes: {
-      choice: { count: 40, score: 2 },
-      judgment: { count: 20, score: 1 }
+      choice: { count: 30, score: 2 },
+      multi: { count: 0, score: 4 },
+      judgment: { count: 20, score: 2 }
     },
     duration: 90,
     totalScore: 100
@@ -45,7 +46,7 @@ const ExamConfigManager: React.FC = () => {
     try {
       const res = await request('/admin/exam-configs', {
         method: 'POST',
-        body: JSON.stringify({ pageNum: 1, pageSize: 100 })
+        body: JSON.stringify({ pageNumber: 1, pageSize: 100 })
       });
       let list: any[] = [];
       if (Array.isArray(res)) {
@@ -63,6 +64,7 @@ const ExamConfigManager: React.FC = () => {
         categories: item.categoryId ? [item.categoryId] : [],
           questionTypes: {
           choice: { count: item.choiceCount, score: item.choiceScore },
+          multi: { count: item.multiCount, score: item.multiScore },
           judgment: { count: item.judgmentCount, score: item.judgmentScore }
           },
         duration: item.duration,
@@ -88,15 +90,16 @@ const ExamConfigManager: React.FC = () => {
   const calculateTotalScore = (config: Partial<ExamConfig>) => {
     if (!config.questionTypes) return 0;
     const choiceTotal = config.questionTypes.choice.count * config.questionTypes.choice.score;
+    const multiTotal = config.questionTypes.multi.count * config.questionTypes.multi.score;
     const judgmentTotal = config.questionTypes.judgment.count * config.questionTypes.judgment.score;
-    return choiceTotal + judgmentTotal;
+    return choiceTotal + multiTotal + judgmentTotal;
   };
 
   const [paperGeneratorOpen, setPaperGeneratorOpen] = useState(false);
   const [selectedConfigForPaper, setSelectedConfigForPaper] = useState<ExamConfig | null>(null);
 
   // 1. 新建配置时，选择题目分类后自动获取题型数量
-  const [availableCounts, setAvailableCounts] = useState<{ choice: number; judgment: number } | null>(null);
+  const [availableCounts, setAvailableCounts] = useState<{ choice: number; multi: number; judgment: number } | null>(null);
   useEffect(() => {
     const categoryId = newConfig.categories?.[0];
     if (categoryId) {
@@ -105,14 +108,14 @@ const ExamConfigManager: React.FC = () => {
         body: JSON.stringify({ categoryId })
       }).then(res => {
         // 解析data数组
-        let choice = 0, judgment = 0;
+        let choice = 0, multi = 0, judgment = 0;
         const arr = Array.isArray(res.data) ? res.data : [];
         arr.forEach(item => {
           if (item.questionType === 'choice') choice = item.questionCount;
+          if (item.questionType === 'multi') multi = item.questionCount;
           if (item.questionType === 'judgment') judgment = item.questionCount;
         });
-        setAvailableCounts({ choice, judgment });
-        // 自动填充数量为最大可选数量（仅当当前为0或空时）
+        setAvailableCounts({ choice, multi, judgment });
         setNewConfig(prev => ({
           ...prev,
           questionTypes: {
@@ -120,6 +123,10 @@ const ExamConfigManager: React.FC = () => {
             choice: {
               ...prev.questionTypes!.choice,
               count: (!prev.questionTypes!.choice.count || prev.questionTypes!.choice.count === 0) ? choice : prev.questionTypes!.choice.count
+            },
+            multi: {
+              ...prev.questionTypes!.multi,
+              count: (!prev.questionTypes!.multi.count || prev.questionTypes!.multi.count === 0) ? multi : prev.questionTypes!.multi.count
             },
             judgment: {
               ...prev.questionTypes!.judgment,
@@ -138,12 +145,11 @@ const ExamConfigManager: React.FC = () => {
     if (!newConfig.name || !newConfig.categories?.length) {
       toast({
         title: "请填写完整信息",
-        description: "考试名称和题目分类为必填项",
+        description: "考试配置名称和题目分类为必填项",
         variant: "destructive"
       });
       return;
     }
-
     const totalScore = calculateTotalScore(newConfig);
     if (totalScore !== 100) {
       toast({
@@ -153,10 +159,10 @@ const ExamConfigManager: React.FC = () => {
       });
       return;
     }
-
     if (
       availableCounts && (
         newConfig.questionTypes?.choice.count > availableCounts.choice ||
+        newConfig.questionTypes?.multi.count > availableCounts.multi ||
         newConfig.questionTypes?.judgment.count > availableCounts.judgment
       )
     ) {
@@ -167,7 +173,6 @@ const ExamConfigManager: React.FC = () => {
       });
       return;
     }
-
     setGlobalLoading(true);
     try {
       const body = {
@@ -177,9 +182,11 @@ const ExamConfigManager: React.FC = () => {
         totalScore: 100,
         passScore: 60, // 可根据需要调整
         choiceCount: newConfig.questionTypes?.choice.count,
+        multiCount: newConfig.questionTypes?.multi.count,
         judgmentCount: newConfig.questionTypes?.judgment.count,
-        choiceScore: newConfig.questionTypes?.choice.score,
-        judgmentScore: newConfig.questionTypes?.judgment.score,
+        choiceScore: 2,
+        multiScore: 4,
+        judgmentScore: 2,
         remark: '',
       };
       await request('/admin/exam-configs/add', {
@@ -195,8 +202,9 @@ const ExamConfigManager: React.FC = () => {
         name: '',
         categories: [],
         questionTypes: {
-          choice: { count: 40, score: 2 },
-          judgment: { count: 20, score: 1 }
+          choice: { count: 30, score: 2 },
+          multi: { count: 0, score: 4 },
+          judgment: { count: 20, score: 2 }
         },
         duration: 90,
         totalScore: 100
@@ -255,9 +263,11 @@ const ExamConfigManager: React.FC = () => {
         totalScore: config.totalScore,
         passScore: 60, // 可根据需要调整
         choiceCount: config.questionTypes.choice.count,
+        multiCount: config.questionTypes.multi.count,
         judgmentCount: config.questionTypes.judgment.count,
-        choiceScore: config.questionTypes.choice.score,
-        judgmentScore: config.questionTypes.judgment.score,
+        choiceScore: 2,
+        multiScore: 4,
+        judgmentScore: 2,
         remark: '',
       };
       await request('/admin/exam-configs/update', {
@@ -270,11 +280,11 @@ const ExamConfigManager: React.FC = () => {
       });
       fetchExamConfigs();
     } catch (error) {
-    toast({
+      toast({
         title: "编辑失败",
         description: String(error),
-      variant: "destructive"
-    });
+        variant: "destructive"
+      });
     } finally {
       setGlobalLoading(false);
     }
@@ -297,7 +307,7 @@ const ExamConfigManager: React.FC = () => {
     if (!editForm?.name || !editForm.categories?.length) {
       toast({
         title: '请填写完整信息',
-        description: '考试名称和题目分类为必填项',
+        description: '考试配置名称和题目分类为必填项',
         variant: 'destructive',
       });
       return;
@@ -315,7 +325,7 @@ const ExamConfigManager: React.FC = () => {
     closeEditDialog();
   };
 
-  const [editAvailableCounts, setEditAvailableCounts] = useState<{ choice: number; judgment: number } | null>(null);
+  const [editAvailableCounts, setEditAvailableCounts] = useState<{ choice: number; multi: number; judgment: number } | null>(null);
   // 监听editForm.categories变化，获取可选数量
   useEffect(() => {
     const categoryId = editForm?.categories?.[0];
@@ -324,13 +334,14 @@ const ExamConfigManager: React.FC = () => {
         method: 'POST',
         body: JSON.stringify({ categoryId })
       }).then(res => {
-        let choice = 0, judgment = 0;
+        let choice = 0, multi = 0, judgment = 0;
         const arr = Array.isArray(res.data) ? res.data : [];
         arr.forEach(item => {
           if (item.questionType === 'choice') choice = item.questionCount;
+          if (item.questionType === 'multi') multi = item.questionCount;
           if (item.questionType === 'judgment') judgment = item.questionCount;
         });
-        setEditAvailableCounts({ choice, judgment });
+        setEditAvailableCounts({ choice, multi, judgment });
       }).catch(() => setEditAvailableCounts(null));
     } else {
       setEditAvailableCounts(null);
@@ -357,11 +368,11 @@ const ExamConfigManager: React.FC = () => {
               <h3 className="text-lg font-semibold text-gray-800 mb-4">新建考试配置</h3>
                 <div className="space-y-4 flex-1">
                 <div>
-                  <Label>考试名称</Label>
+                  <Label>考试配置名称</Label>
                   <Input 
                     value={newConfig.name} 
                     onChange={(e) => setNewConfig({...newConfig, name: e.target.value})}
-                    placeholder="请输入考试名称"
+                    placeholder="请输入考试配置名称"
                   />
                 </div>
                 <div>
@@ -404,14 +415,35 @@ const ExamConfigManager: React.FC = () => {
                         type="number" 
                         placeholder="分值"
                           className="w-14 px-2 text-center"
-                        value={newConfig.questionTypes?.choice.score}
-                        onChange={(e) => setNewConfig({
-                          ...newConfig, 
-                          questionTypes: {
-                            ...newConfig.questionTypes!,
-                            choice: { ...newConfig.questionTypes!.choice, score: parseInt(e.target.value) || 0 }
-                          }
-                        })}
+                        value={2}
+                        disabled
+                      />
+                        <span className="text-sm text-gray-600 whitespace-nowrap">分/题</span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1 items-center">
+                    <span className="text-sm font-medium">多选题</span>
+                      <span className="text-xs text-gray-500">{availableCounts ? `可选数量${availableCounts.multi}` : ''}</span>
+                    <Input 
+                      type="number" 
+                        placeholder="数量"
+                        className="w-14 px-2 text-center"
+                      value={newConfig.questionTypes?.multi.count}
+                      onChange={(e) => setNewConfig({
+                        ...newConfig, 
+                        questionTypes: {
+                          ...newConfig.questionTypes!,
+                          multi: { ...newConfig.questionTypes!.multi, count: parseInt(e.target.value) || 0 }
+                        }
+                      })}
+                    />
+                      <div className="flex items-center space-x-1 whitespace-nowrap flex-nowrap">
+                      <Input 
+                        type="number" 
+                        placeholder="分值"
+                          className="w-14 px-2 text-center"
+                        value={4}
+                        disabled
                       />
                         <span className="text-sm text-gray-600 whitespace-nowrap">分/题</span>
                       </div>
@@ -437,14 +469,8 @@ const ExamConfigManager: React.FC = () => {
                         type="number" 
                         placeholder="分值"
                           className="w-14 px-2 text-center"
-                        value={newConfig.questionTypes?.judgment.score}
-                        onChange={(e) => setNewConfig({
-                          ...newConfig, 
-                          questionTypes: {
-                            ...newConfig.questionTypes!,
-                            judgment: { ...newConfig.questionTypes!.judgment, score: parseInt(e.target.value) || 0 }
-                          }
-                        })}
+                        value={2}
+                        disabled
                       />
                         <span className="text-sm text-gray-600 whitespace-nowrap">分/题</span>
                       </div>
@@ -522,6 +548,10 @@ const ExamConfigManager: React.FC = () => {
                             <span>{config.questionTypes.choice.count}题 × {config.questionTypes.choice.score}分 = {config.questionTypes.choice.count * config.questionTypes.choice.score}分</span>
                           </div>
                           <div className="flex justify-between">
+                            <span>多选题：</span>
+                            <span>{config.questionTypes.multi.count}题 × {config.questionTypes.multi.score}分 = {config.questionTypes.multi.count * config.questionTypes.multi.score}分</span>
+                          </div>
+                          <div className="flex justify-between">
                             <span>判断题：</span>
                             <span>{config.questionTypes.judgment.count}题 × {config.questionTypes.judgment.score}分 = {config.questionTypes.judgment.count * config.questionTypes.judgment.score}分</span>
                           </div>
@@ -589,7 +619,7 @@ const ExamConfigManager: React.FC = () => {
           {editForm && (
             <div className="space-y-4">
               <div>
-                <Label>考试名称</Label>
+                <Label>考试配置名称</Label>
                 <Input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
               </div>
               <div>
@@ -623,9 +653,30 @@ const ExamConfigManager: React.FC = () => {
                       type="number" 
                       placeholder="分值"
                       className="w-14 px-2 text-center"
-                      value={editForm.questionTypes?.choice.score}
-                      onChange={e => setEditForm({ ...editForm, questionTypes: { ...editForm.questionTypes!, choice: { ...editForm.questionTypes!.choice, score: parseInt(e.target.value) || 0 } } })}
-                      disabled={globalLoading}
+                      value={2}
+                      disabled
+                    />
+                    <span className="text-sm text-gray-600 whitespace-nowrap">分/题</span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 gap-1 items-center">
+                  <span className="text-sm font-medium">多选题</span>
+                  <span className="text-xs text-gray-500">{editAvailableCounts ? `可选数量${editAvailableCounts.multi}` : ''}</span>
+                  <Input 
+                    type="number" 
+                    placeholder="数量"
+                    className="w-14 px-2 text-center"
+                    value={editForm.questionTypes?.multi.count}
+                    onChange={e => setEditForm({ ...editForm, questionTypes: { ...editForm.questionTypes!, multi: { ...editForm.questionTypes!.multi, count: parseInt(e.target.value) || 0 } } })}
+                    disabled={globalLoading}
+                  />
+                  <div className="flex items-center space-x-1 whitespace-nowrap flex-nowrap">
+                    <Input 
+                      type="number" 
+                      placeholder="分值"
+                      className="w-14 px-2 text-center"
+                      value={4}
+                      disabled
                     />
                     <span className="text-sm text-gray-600 whitespace-nowrap">分/题</span>
                   </div>
@@ -646,9 +697,8 @@ const ExamConfigManager: React.FC = () => {
                       type="number" 
                       placeholder="分值"
                       className="w-14 px-2 text-center"
-                      value={editForm.questionTypes?.judgment.score}
-                      onChange={e => setEditForm({ ...editForm, questionTypes: { ...editForm.questionTypes!, judgment: { ...editForm.questionTypes!.judgment, score: parseInt(e.target.value) || 0 } } })}
-                      disabled={globalLoading}
+                      value={2}
+                      disabled
                     />
                     <span className="text-sm text-gray-600 whitespace-nowrap">分/题</span>
                   </div>

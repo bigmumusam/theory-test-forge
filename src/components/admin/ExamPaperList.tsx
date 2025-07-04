@@ -43,7 +43,7 @@ const ExamPaperList: React.FC = () => {
     paperName: '',
     categoryId: '',
     status: '',
-    pageNum: 1,
+    pageNumber: 1,
     pageSize: 10
   });
 
@@ -96,7 +96,7 @@ const ExamPaperList: React.FC = () => {
     setFilters(prev => ({
       ...prev,
       [key]: realValue,
-      pageNum: 1 // 重置到第一页
+      pageNumber: 1 // 重置到第一页
     }));
   };
 
@@ -104,7 +104,7 @@ const ExamPaperList: React.FC = () => {
   const handleSearch = () => {
     setFilters(prev => ({
       ...prev,
-      pageNum: 1
+      pageNumber: 1
     }));
   };
 
@@ -114,7 +114,7 @@ const ExamPaperList: React.FC = () => {
       paperName: '',
       categoryId: '',
       status: '',
-      pageNum: 1,
+      pageNumber: 1,
       pageSize: 10
     });
   };
@@ -299,7 +299,7 @@ const ExamPaperList: React.FC = () => {
                   <PaginationContent>
                     <PaginationItem>
                       <PaginationPrevious 
-                        onClick={() => handleFilterChange('pageNum', Math.max(1, currentPage - 1))}
+                        onClick={() => handleFilterChange('pageNumber', Math.max(1, currentPage - 1))}
                         className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
                       />
                     </PaginationItem>
@@ -307,7 +307,7 @@ const ExamPaperList: React.FC = () => {
                     {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
                       <PaginationItem key={page}>
                         <PaginationLink
-                          onClick={() => handleFilterChange('pageNum', page)}
+                          onClick={() => handleFilterChange('pageNumber', page)}
                           isActive={currentPage === page}
                           className="cursor-pointer"
                         >
@@ -318,7 +318,7 @@ const ExamPaperList: React.FC = () => {
                     
                     <PaginationItem>
                       <PaginationNext 
-                        onClick={() => handleFilterChange('pageNum', Math.min(totalPages, currentPage + 1))}
+                        onClick={() => handleFilterChange('pageNumber', Math.min(totalPages, currentPage + 1))}
                         className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
                       />
                     </PaginationItem>

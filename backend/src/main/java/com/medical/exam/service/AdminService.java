@@ -2,9 +2,11 @@ package com.medical.exam.service;
 
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.bean.copier.CopyOptions;
+import cn.hutool.poi.excel.ExcelReader;
+import cn.hutool.poi.excel.ExcelUtil;
+import com.medical.exam.common.exception.CustomException;
 import com.medical.exam.dto.*;
 import com.medical.exam.entity.*;
-import com.medical.exam.entity.table.SysLogTableDef;
 import com.medical.exam.vo.*;
 import com.medical.exam.mapper.*;
 import com.medical.exam.security.JwtAccessContext;
@@ -17,6 +19,7 @@ import com.mybatisflex.core.row.Db;
 import com.mybatisflex.core.row.Row;
 import com.mybatisflex.core.row.RowUtil;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,6 +45,7 @@ import static com.mybatisflex.core.query.QueryMethods.*;
 
 
 @Service
+@Slf4j
 public class AdminService {
 
     @Resource
@@ -95,7 +99,7 @@ public class AdminService {
 
     public Page<ExamResultVo> getExamResults(ExamResultQueryDTO request) {
         // 模拟分页数据
-        return examRecordMapper.paginateAs(request.getPageNum(),request.getPageSize(),
+        return examRecordMapper.paginateAs(request.getPageNumber(),request.getPageSize(),
                 QueryWrapper.create()
                         .select(EXAM_RECORD.RECORD_ID,SYS_USER.USER_NAME,SYS_USER.DEPARTMENT.as("categoryName"),SYS_USER.ID_NUMBER,EXAM_RECORD.EXAM_NAME
                                 ,EXAM_RECORD.END_TIME.as("examDate"),EXAM_RECORD.DURATION,EXAM_RECORD.SCORE,EXAM_RECORD.STATUS,EXAM_RECORD.RETAKE)
@@ -173,17 +177,66 @@ public class AdminService {
             .and(EXAM_QUESTION.SCORE.ge(request.getScoreMin()))
             .and(EXAM_QUESTION.SCORE.le(request.getScoreMax()))
             .and(EXAM_QUESTION.QUESTION_CONTENT.like(request.getKeyword()));
-        return examQuestionMapper.paginate(request.getPageNum(), request.getPageSize(), queryWrapper);
+        return examQuestionMapper.paginate(request.getPageNumber(), request.getPageSize(), queryWrapper);
     }
 
-    public Map<String, Object> importQuestions(MultipartFile file) {
+    public String importQuestions(MultipartFile file) {
         CustomToken customToken = JwtAccessContext.getLoginInfo();
-        System.out.println("导入题目文件: " + file.getOriginalFilename() + ", 操作用户: " + customToken.getUserName());
-        Map<String, Object> result = new HashMap<>();
-        result.put("successCount", 10);
-        result.put("failCount", 0);
-        result.put("total", 10);
-        return result;
+        List<ExamQuestion> examQuestions = new ArrayList<>();
+        try {
+            ExcelReader reader = ExcelUtil.getReader(file.getInputStream());
+            List<Map<String, Object>> readAll = reader.readAll();
+            for (Map<String, Object> row : readAll) {
+                Object categoryNameObj = row.get("题目所属分类");
+                Object questionTypeObj = row.get("题型");
+                Object questionContentObj = row.get("题干");
+                Object questionOptionsObj = row.get("选项");
+                Object correctAnswerObj = row.get("正确选项");
+
+                if (categoryNameObj == null || questionTypeObj == null || questionContentObj == null || correctAnswerObj == null) {
+                    continue; // 忽略该条数据
+                }
+                String categoryName = categoryNameObj.toString().trim();
+                String questionType = questionTypeObj.toString().trim();
+                String questionContent = questionContentObj.toString().trim();
+//                String questionOptions = questionOptionsObj.toString().trim();
+                String correctAnswer = correctAnswerObj.toString().trim();
+
+                //同一个分类下存在一样的题目
+                long count =examQuestionMapper.selectCountByQuery(QueryWrapper.create()
+                        .innerJoin(EXAM_CATEGORY).on(EXAM_QUESTION.CATEGORY_ID.eq(EXAM_CATEGORY.CATEGORY_ID))
+                        .where(EXAM_CATEGORY.CATEGORY_NAME.eq(categoryName))
+                        .and(EXAM_QUESTION.QUESTION_CONTENT.eq(questionContent))
+                        );
+                if (count>0) {
+                    log.info("题目:{}已存在",questionContent);
+                    continue;
+                }
+                examQuestions.add(ExamQuestion.builder()
+                        .questionType(getQuestionTypeIdByName(questionType))
+                        .questionContent(questionContent)
+                        .questionOptions(questionOptionsObj==null ? null :"[" + questionOptionsObj + "]")
+                        .correctAnswer(correctAnswer)
+                        .categoryId(examCategoryMapper.selectOneByQuery(QueryWrapper.create()
+                                .where(EXAM_CATEGORY.CATEGORY_NAME.eq(categoryName))).getCategoryId())
+                        .score("多选题".equals(questionType) ? 4 : 2)
+                        .difficulty("easy")
+                        .status("1")
+                        .createBy(customToken.getUserName())
+                        .score(1).build());
+            }
+            examQuestionMapper.insertBatch(examQuestions);
+        }catch (Exception e){
+            log.error("导入题目错误:",e);
+            throw new CustomException("导入题目错误:"+e.getMessage());
+        }
+        String message =  "成功导入题目"+examQuestions.size()+"条";
+        sysLogMapper.insert(SysLog.builder()
+                .userId(customToken.getUserId())
+                .userName(customToken.getUserName())
+                .content(message)
+                .build());
+        return message;
     }
 
     public void batchDeleteQuestions(Map<String, Object> request) {
@@ -221,7 +274,7 @@ public class AdminService {
     }
 
     public Page<ExamCategoryVo> getCategories(CategoryQueryDTO categoryQueryDTO) {
-        return examCategoryMapper.paginateAs(categoryQueryDTO.getPageNum(),categoryQueryDTO.getPageSize(),
+        return examCategoryMapper.paginateAs(categoryQueryDTO.getPageNumber(),categoryQueryDTO.getPageSize(),
                 QueryWrapper.create()
                         .select(EXAM_CATEGORY.CATEGORY_ID,EXAM_CATEGORY.CATEGORY_NAME,EXAM_CATEGORY.REMARK,count(EXAM_QUESTION.CATEGORY_ID).as("questionCount"))
                         .leftJoin(EXAM_QUESTION).on(EXAM_CATEGORY.CATEGORY_ID.eq(EXAM_QUESTION.CATEGORY_ID))
@@ -248,7 +301,7 @@ public class AdminService {
 
     // 考试配置管理
     public Page<ExamConfig> getExamConfigs(ExamConfigDTO request) {
-       return examConfigMapper.paginate(request.getPageNum(),request.getPageSize(),QueryWrapper.create()
+       return examConfigMapper.paginate(request.getPageNumber(),request.getPageSize(),QueryWrapper.create()
                .where(EXAM_CONFIG.STATUS.eq("1")).orderBy(EXAM_CONFIG.CREATE_TIME.desc()));
     }
 
@@ -344,7 +397,7 @@ public class AdminService {
         queryWrapper.orderBy(EXAM_PAPER.CREATE_TIME.desc());
         
         return examPaperMapper.paginateAs(
-            examPaperQueryDTO.getPageNum(),
+            examPaperQueryDTO.getPageNumber(),
             examPaperQueryDTO.getPageSize(),
             queryWrapper,
             ExamPaperVo.class
@@ -510,6 +563,21 @@ public class AdminService {
         Collections.shuffle(questions);
         
         return questions;
+    }
+
+
+
+    private String getQuestionTypeIdByName(String questionTypeName){
+        if(questionTypeName.equals("选择题")){
+            return "choice";
+        }
+        if(questionTypeName.equals("多选题")){
+            return "multi";
+        }
+        if(questionTypeName.equals("判断题")){
+            return "judgment";
+        }
+        return questionTypeName;
     }
 
 

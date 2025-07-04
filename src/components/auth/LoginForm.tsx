@@ -3,10 +3,21 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
-import { User, LoginCredentials } from '../../types/auth';
+import { LoginCredentials } from '../../types/auth';
 import { useToast } from '@/hooks/use-toast';
 import { request } from '@/lib/request';
 import { useOptions } from '../../context/OptionsContext';
+
+// 合并User类型，兼容userName、status、role: 'admin' | 'exam_admin' | 'student'
+export interface User {
+  id: string;
+  name: string;
+  userName?: string;
+  idNumber: string;
+  role: 'admin' | 'exam_admin' | 'student';
+  department?: string;
+  status?: '0' | '1';
+}
 
 interface LoginFormProps {
   onLogin: (user: User) => void;
@@ -48,8 +59,8 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin }) => {
       // 兼容后端返回结构
       const { token, user } = res.data || res;
       if (!token || !user) throw new Error('登录响应异常');
-      // 兼容 nameName 字段
-      const userObj = { ...user, name: user.nameName || user.userName || user.name };
+      // 兼容 nameName 字段和 userId 字段
+      const userObj = { ...user, id: user.id || user.userId, name: user.nameName || user.userName || user.name };
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(userObj));
       // 登录成功后拉取 options
@@ -117,7 +128,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin }) => {
           管理员：身份证号 110101199001011234，姓名 管理员
         </p>
         <p className="text-xs text-blue-600">
-          学员：任意有效身份证号和姓名
+          学员：系统中有效身份证号和姓名
         </p>
       </div>
     </div>

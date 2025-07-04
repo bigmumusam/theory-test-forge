@@ -39,7 +39,7 @@ const RoleManager = () => {
       const params = {
         keyword: searchKeyword,
         status: selectedStatus === 'all' ? undefined : selectedStatus,
-        pageNum: currentPage,
+        pageNumber: currentPage,
         pageSize
       };
       const res = await request('/auth/roles/list', {

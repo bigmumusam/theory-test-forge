@@ -26,7 +26,21 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
   const { toast } = useToast();
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const currentQuestion = exam.questions[currentQuestionIndex];
+  // 解析多选题 correctAnswer 并修正 type 字段
+  const parsedQuestions = exam.questions.map(q => {
+    let correctAnswer = q.correctAnswer;
+    // 兼容后端字段为 questionType 或 type
+    const qType = (q as any).questionType || q.type;
+    if (qType === 'multi' && typeof correctAnswer === 'string') {
+      correctAnswer = correctAnswer.split(',').map((s: string) => Number(s));
+    }
+    return {
+      ...q,
+      type: qType,
+      correctAnswer,
+    };
+  });
+  const currentQuestion = parsedQuestions[currentQuestionIndex];
   const progress = ((currentQuestionIndex + 1) / exam.questions.length) * 100;
 
   // 防止页面刷新
@@ -137,9 +151,21 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
 
     exam.questions.forEach(question => {
       const userAnswer = answers[question.id];
-      if (userAnswer !== undefined && userAnswer === question.correctAnswer) {
-        score += question.score;
-        correctCount++;
+      if (userAnswer !== undefined) {
+        if (question.type === 'multi') {
+          // 多选题：答案为数组，需与标准答案数组全等
+          if (Array.isArray(userAnswer) &&
+              Array.isArray(question.correctAnswer) &&
+              userAnswer.length === question.correctAnswer.length &&
+              userAnswer.every((v: number) => question.correctAnswer.includes(v)) &&
+              question.correctAnswer.every((v: number) => userAnswer.includes(v))) {
+            score += question.score;
+            correctCount++;
+          }
+        } else if (userAnswer === question.correctAnswer) {
+          score += question.score;
+          correctCount++;
+        }
       }
     });
 
@@ -154,7 +180,9 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
         recordId: exam.id, // 使用试卷ID作为记录ID
         answers: exam.questions.map(question => ({
           questionId: question.id,
-          userAnswer: answers[question.id] !== undefined ? answers[question.id].toString() : ''
+          userAnswer: question.type === 'multi'
+            ? (Array.isArray(answers[question.id]) ? answers[question.id].join(',') : '')
+            : (answers[question.id] !== undefined ? answers[question.id].toString() : '')
         }))
       };
 
@@ -163,16 +191,18 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
       
       if (response.code === 200) {
         // 计算前端显示用的分数
-    const result = calculateScore();
-    setExamResult(result);
+        const result = calculateScore();
+        setExamResult(result);
         setIsExamCompleted(true);
-    setShowSubmitDialog(true);
-        
+        setShowSubmitDialog(true);
         // 停止计时器
         if (timerRef.current) {
           clearInterval(timerRef.current);
         }
-        
+        // 自动返回首页
+        setTimeout(() => {
+          onComplete();
+        }, 1500);
         toast({
           title: "提交成功",
           description: "您的考试已成功提交",
@@ -218,7 +248,11 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
   };
 
   const isCurrentQuestionAnswered = (): boolean => {
-    return answers[currentQuestion.id] !== undefined;
+    const ans = answers[currentQuestion.id];
+    if (currentQuestion.type === 'multi') {
+      return Array.isArray(ans) && ans.length > 0;
+    }
+    return ans !== undefined && ans !== '';
   };
 
   return (
@@ -270,9 +304,13 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
               <div className="flex justify-between items-start mb-6">
                 <div className="flex items-center space-x-3">
                   <span className={`px-3 py-1 text-sm rounded ${
-                    currentQuestion.type === 'choice' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+                    currentQuestion.type === 'choice' ? 'bg-blue-100 text-blue-800' :
+                    currentQuestion.type === 'multi' ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-green-100 text-green-800'
                   }`}>
-                    {currentQuestion.type === 'choice' ? '选择题' : '判断题'}
+                    {currentQuestion.type === 'choice' ? '选择题' :
+                     currentQuestion.type === 'multi' ? '多选题' :
+                     '判断题'}
                   </span>
                   <span className="px-3 py-1 text-sm bg-purple-100 text-purple-800 rounded">
                     {currentQuestion.score}分
@@ -317,6 +355,45 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+              {currentQuestion.type === 'multi' && currentQuestion.options && (
+                <div className="space-y-2">
+                  {currentQuestion.options.map((option, index) => {
+                    const ans = answers[currentQuestion.id];
+                    let selected = false;
+                    if (Array.isArray(ans)) {
+                      selected = ans.includes(index);
+                    }
+                    return (
+                      <div
+                        key={index}
+                        onClick={() => {
+                          let prev: number[] = Array.isArray(ans) ? ans : [];
+                          if (selected) {
+                            prev = prev.filter((i: number) => i !== index);
+                          } else {
+                            prev = [...prev, index];
+                          }
+                          handleAnswerSelect(currentQuestion.id, prev);
+                        }}
+                        className={`flex items-center space-x-2 p-4 rounded border cursor-pointer transition-all select-none ${
+                          selected
+                            ? 'bg-yellow-50 border-yellow-500 text-yellow-800 font-bold'
+                            : 'bg-gray-50 border-transparent'
+                        }`}
+                      >
+                        <span className="w-8 text-center font-medium">{String.fromCharCode(65 + index)}.</span>
+                        <span className="flex-1 text-gray-800 text-left">{option}</span>
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          readOnly
+                          className="w-4 h-4 border-2 rounded"
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               
@@ -372,7 +449,7 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
                 ) : (
                   <Button 
                     onClick={handleNext}
-                    disabled={currentQuestionIndex === exam.questions.length - 1}
+                    disabled={currentQuestionIndex === exam.questions.length - 1 || !isCurrentQuestionAnswered()}
                   >
                     下一题
                   </Button>

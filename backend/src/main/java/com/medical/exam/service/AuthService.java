@@ -1,6 +1,5 @@
 package com.medical.exam.service;
 
-import cn.hutool.core.util.StrUtil;
 import cn.hutool.poi.excel.ExcelReader;
 import cn.hutool.poi.excel.ExcelUtil;
 import com.medical.exam.common.exception.CustomException;
@@ -57,8 +56,8 @@ public class AuthService {
         // 查找用户
 //        SysUser user = userMapper.findByIdNumberAndName(request.getIdNumber(), request.getName());
         SysUser user = userMapper.selectOneByQuery(QueryWrapper.create()
-                .where(SYS_USER.ID_NUMBER.eq(request.getIdNumber()))
-                .and(SYS_USER.USER_NAME.eq(request.getName()))
+                .where(SYS_USER.ID_NUMBER.eq(request.getIdNumber().trim()))
+                .and(SYS_USER.USER_NAME.eq(request.getName().trim()))
                 .and(SYS_USER.STATUS.eq("1")));
         if (user == null) {
             throw new CustomException("用户信息不存在");
@@ -126,7 +125,7 @@ public class AuthService {
                 .and(SYS_USER.STATUS.eq(userQueryDTO.getStatus()))
                 .and(SYS_USER.DEPARTMENT.eq(userQueryDTO.getDepartment()));
 
-        return  userMapper.paginate(userQueryDTO.getPageNum(), userQueryDTO.getPageSize(), queryWrapper);
+        return  userMapper.paginate(userQueryDTO.getPageNumber(), userQueryDTO.getPageSize(), queryWrapper);
     }
 
 
@@ -188,6 +187,7 @@ public class AuthService {
             }
             userMapper.insertBatch(sysUsers);
         }catch (Exception e){
+            log.error("导入用户错误:{}",e);
             throw new CustomException("导入用户错误:"+e.getMessage());
         }
         String message =  "成功导入用户"+sysUsers.size()+"条";
@@ -210,7 +210,7 @@ public class AuthService {
         QueryWrapper queryWrapper = QueryWrapper.create()
             .where(SYS_ROLE.ROLE_NAME.like(queryDTO.getKeyword()).or(SYS_ROLE.ROLE_KEY.like(queryDTO.getKeyword())))
             .and(SYS_ROLE.STATUS.eq(queryDTO.getStatus())).orderBy(SYS_ROLE.ROLE_SORT.asc());
-        return roleMapper.paginate(queryDTO.getPageNum(), queryDTO.getPageSize(), queryWrapper);
+        return roleMapper.paginate(queryDTO.getPageNumber(), queryDTO.getPageSize(), queryWrapper);
     }
 
     public void addRole(RoleRequestDTO request) {

@@ -48,18 +48,14 @@
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
-        <!-- Database -->
-<!--        <dependency>-->
-<!--            <groupId>mysql</groupId>-->
-<!--            <artifactId>mysql-connector-java</artifactId>-->
-<!--            <version>8.0.33</version>-->
-<!--        </dependency>-->
-        <!-- https://mvnrepository.com/artifact/mysql/mysql-connector-java -->
+<!--         Database -->
         <dependency>
             <groupId>mysql</groupId>
             <artifactId>mysql-connector-java</artifactId>
-            <version>5.1.49</version>
+            <version>8.0.33</version>
         </dependency>
+<!--         https://mvnrepository.com/artifact/mysql/mysql-connector-java -->
+
         <dependency>
             <groupId>com.fasterxml.jackson.datatype</groupId>
             <artifactId>jackson-datatype-jsr310</artifactId>

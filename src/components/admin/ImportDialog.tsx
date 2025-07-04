@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -28,18 +27,16 @@ const ImportDialog: React.FC<ImportDialogProps> = ({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
-      const allowedTypes = ['.xlsx', '.xls', '.csv'];
+      const allowedTypes = ['.xlsx', '.xls'];
       const fileExtension = selectedFile.name.toLowerCase().substring(selectedFile.name.lastIndexOf('.'));
-      
       if (!allowedTypes.includes(fileExtension)) {
         toast({
           title: "文件格式错误",
-          description: "请选择 Excel 或 CSV 文件",
+          description: "请选择Excel文件（.xlsx或.xls）",
           variant: "destructive"
         });
         return;
       }
-      
       setFile(selectedFile);
     }
   };
@@ -53,7 +50,18 @@ const ImportDialog: React.FC<ImportDialogProps> = ({
       });
       return;
     }
-
+    const validTypes = [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel'
+    ];
+    if (!validTypes.includes(file.type)) {
+      toast({
+        title: "文件类型错误",
+        description: "请上传Excel文件（.xlsx或.xls）",
+        variant: "destructive"
+      });
+      return;
+    }
     onImport(file);
     setFile(null);
     onClose();
@@ -63,7 +71,6 @@ const ImportDialog: React.FC<ImportDialogProps> = ({
     if (templateDownloadUrl) {
       const link = document.createElement('a');
       link.href = templateDownloadUrl;
-      link.download = `${title}_模板.xlsx`;
       link.click();
     }
   };
@@ -81,12 +88,12 @@ const ImportDialog: React.FC<ImportDialogProps> = ({
             <Input
               id="file"
               type="file"
-              accept=".xlsx,.xls,.csv"
+              accept=".xlsx,.xls"
               onChange={handleFileChange}
               className="mt-2"
             />
             <p className="text-sm text-gray-500 mt-1">
-              支持 Excel(.xlsx, .xls) 和 CSV 文件
+              支持 Excel(.xlsx, .xls) 文件
             </p>
           </div>
 

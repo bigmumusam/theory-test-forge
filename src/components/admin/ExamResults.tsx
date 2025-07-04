@@ -115,8 +115,20 @@ const ExamResults: React.FC = () => {
     // eslint-disable-next-line
   }, [filterCategory, filterStatus, searchTerm, currentPage]);
 
+  // 排序：待开始 > 进行中 > 已完成/超时
+  const sortedResults = [...results].sort((a, b) => {
+    const statusOrder = {
+      'pending': 0,
+      'notStarted': 0,
+      'in-progress': 1,
+      'completed': 2,
+      'timeout': 2
+    };
+    return (statusOrder[a.status || ''] ?? 99) - (statusOrder[b.status || ''] ?? 99);
+  });
+  const paginatedResults = sortedResults;
+
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const paginatedResults = results;
 
   const getStatusBadge = (status: string) => {
     switch (status) {

@@ -2,9 +2,19 @@ import React, { useState, useEffect } from 'react';
 import LoginForm from '../components/auth/LoginForm';
 import AdminDashboard from '../components/admin/AdminDashboard';
 import StudentDashboard from '../components/student/StudentDashboard';
-import { User } from '../types/auth';
 import { Card } from '@/components/ui/card';
 import { useOptions } from '../context/OptionsContext';
+
+// 与LoginForm一致的User类型
+interface User {
+  id: string;
+  name: string;
+  userName?: string;
+  idNumber: string;
+  role: 'admin' | 'exam_admin' | 'student';
+  department?: string;
+  status?: '0' | '1';
+}
 
 const Index = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -90,7 +100,7 @@ const Index = () => {
           </div>
           <div className="mt-8 max-w-2xl mx-auto text-center text-gray-700 text-sm">
             <div className="mb-2 font-semibold">演示账号</div>
-            <div>学员：管理员创建的真实账号登录</div>
+            <div>学员：系统中有效身份证号和姓名</div>
           </div>
         </div>
       </div>
@@ -99,7 +109,7 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {user.role === 'admin' ? (
+      {(user.role === 'admin' || user.role === 'exam_admin') ? (
         <AdminDashboard user={user} onLogout={handleLogout} />
       ) : (
         <StudentDashboard user={user} onLogout={handleLogout} />

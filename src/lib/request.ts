@@ -1,5 +1,5 @@
-const API_BASE = "http://localhost:8000/api";
-// const API_BASE = "http://ai.test.baminute.com/api";
+// const API_BASE = "http://localhost:8000/api";
+const API_BASE = import.meta.env.VITE_API_BASE;
 
 export function getToken() {
   return localStorage.getItem('token');

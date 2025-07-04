@@ -49,6 +49,7 @@ public class ExamService {
         // 3-重考了 retake=1 这种情况会查不到。
         List<ExamRecord> examRecords =  examRecordMapper.selectListByQuery(QueryWrapper.create()
                 .where(EXAM_RECORD.USER_ID.eq(customToken.getUserId()))
+                .and(EXAM_RECORD.PAPER_ID.eq(startExamDTO.getPaperId()))
                 .and(EXAM_RECORD.RETAKE.eq(0))
         );
         String recordId = "";

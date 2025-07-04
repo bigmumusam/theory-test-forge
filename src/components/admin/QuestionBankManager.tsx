@@ -150,7 +150,7 @@ const QuestionBankManager: React.FC = () => {
     try {
       const res = await request('/admin/categories', {
         method: 'POST',
-        body: JSON.stringify({ pageNum: page, pageSize: categoryPageSize })
+        body: JSON.stringify({ pageNumber: page, pageSize: categoryPageSize })
       });
       const data = res.data;
       setCategories((data.records || []).map(cat => ({
@@ -285,50 +285,35 @@ const QuestionBankManager: React.FC = () => {
     fetchQuestions(questionPage);
   };
 
-  const handleImportQuestions = (file: File) => {
-    // 模拟导入处理
-    console.log('导入题目文件:', file.name);
-    
-    // 模拟添加导入的题目
-    const importedQuestions: Question[] = [
-      {
-        id: Date.now().toString(),
-        type: 'choice',
-        content: '导入的选择题示例',
-        options: ['选项A', '选项B', '选项C', '选项D'],
-        correctAnswer: 0,
-        category: '消化内科',
-        score: 2,
-        difficulty: 'medium'
-      },
-      {
-        id: (Date.now() + 1).toString(),
-        type: 'judgment',
-        content: '导入的判断题示例',
-        correctAnswer: '正确',
-        category: '消化内科',
-        score: 1,
-        difficulty: 'easy'
+  const handleImportQuestions = async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await request('/admin/questions/import', {
+        method: 'POST',
+        body: formData,
+        headers: {}, // 让 fetch 自动设置 multipart/form-data
+      });
+      if (res.code === 200) {
+        toast({
+          title: '导入成功',
+          description: res.message || '题目已成功导入',
+        });
+        fetchQuestions(1);
+      } else {
+        toast({
+          title: '导入失败',
+          description: res.message || '请检查文件格式',
+          variant: 'destructive',
+        });
       }
-    ];
-    
-    setQuestions([...questions, ...importedQuestions]);
-    
-    // 更新题目分类题目数量
-    const categoryUpdates = {};
-    importedQuestions.forEach(q => {
-      categoryUpdates[q.category] = (categoryUpdates[q.category] || 0) + 1;
-    });
-    
-    setCategories(categories.map(cat => ({
-      ...cat,
-      questionCount: cat.questionCount + (categoryUpdates[cat.name] || 0)
-    })));
-    
-    toast({
-      title: "导入成功",
-      description: `成功导入 ${importedQuestions.length} 道题目`
-    });
+    } catch (error) {
+      toast({
+        title: '导入失败',
+        description: String(error),
+        variant: 'destructive',
+      });
+    }
   };
 
   const getDifficultyText = (difficulty: string) => {
@@ -374,7 +359,7 @@ const QuestionBankManager: React.FC = () => {
     setLoadingQuestions(true);
     try {
       const params = {
-        pageNum: page,
+        pageNumber: page,
         pageSize: questionPageSize,
         categoryId: selectedCategory !== 'all' ? selectedCategory : undefined,
         questionType: filterType !== 'all' ? filterType : undefined,
@@ -862,6 +847,14 @@ const QuestionBankManager: React.FC = () => {
                         <div className="flex space-x-2 mt-4">
                           <Button size="sm" variant="outline" onClick={() => {
                             setEditingQuestion(question);
+                            let options = question.options;
+                            if (typeof options === 'string') {
+                              try {
+                                options = JSON.parse(options);
+                              } catch {
+                                options = ['', '', '', ''];
+                              }
+                            }
                             if (question.type === 'multi') {
                               let correctArr = question.correctAnswer;
                               if (typeof correctArr === 'string') {
@@ -869,11 +862,11 @@ const QuestionBankManager: React.FC = () => {
                               } else if (!Array.isArray(correctArr)) {
                                 correctArr = [];
                               }
-                              setEditQuestionForm({ ...question, correctAnswer: correctArr });
+                              setEditQuestionForm({ ...question, options, correctAnswer: correctArr });
                             } else if (question.type === 'choice') {
-                              setEditQuestionForm({ ...question, correctAnswer: Number(question.correctAnswer) });
+                              setEditQuestionForm({ ...question, options, correctAnswer: Number(question.correctAnswer) });
                             } else {
-                              setEditQuestionForm(question);
+                              setEditQuestionForm({ ...question, options });
                             }
                           }}>编辑</Button>
                           <Button size="sm" variant="destructive" onClick={() => setDeleteDialog({ open: true, type: 'single', id: question.id })}>删除</Button>
@@ -998,10 +991,21 @@ const QuestionBankManager: React.FC = () => {
                   )}
                   {editQuestionForm.type === 'multi' && (
                     <div>
-                      <Label>正确答案（可多选）</Label>
-                      <div className="flex flex-col gap-2">
-                        {(editQuestionForm.options || []).map((option, index) => (
-                          <label key={index} className="flex items-center gap-2">
+                      <Label>选项设置</Label>
+                      <div className="space-y-2">
+                        {(editQuestionForm.options || ['', '', '', '']).map((option, index) => (
+                          <div key={index} className="flex items-center space-x-2">
+                            <span className="w-8 text-center font-medium">{String.fromCharCode(65 + index)}.</span>
+                            <Input 
+                              value={option}
+                              onChange={e => {
+                                const newOptions = [...(editQuestionForm.options || ['', '', '', ''])];
+                                newOptions[index] = e.target.value;
+                                setEditQuestionForm(f => ({ ...f, options: newOptions }));
+                              }}
+                              placeholder={`选项${String.fromCharCode(65 + index)}`}
+                              className="flex-1"
+                            />
                             <input
                               type="checkbox"
                               checked={Array.isArray(editQuestionForm.correctAnswer) && editQuestionForm.correctAnswer.includes(index)}
@@ -1011,9 +1015,10 @@ const QuestionBankManager: React.FC = () => {
                                 else arr = arr.filter(i => i !== index);
                                 setEditQuestionForm(f => ({ ...f, correctAnswer: arr }));
                               }}
+                              className="w-4 h-4"
                             />
-                            <span>{option}</span>
-                          </label>
+                            <label className="text-sm text-gray-600">正确</label>
+                          </div>
                         ))}
                       </div>
                     </div>
@@ -1072,7 +1077,7 @@ const QuestionBankManager: React.FC = () => {
         onClose={() => setIsImportOpen(false)}
         title="导入题目"
         onImport={handleImportQuestions}
-        templateDownloadUrl="/templates/question_template.xlsx"
+        templateDownloadUrl="/templates/题目导入模版.xlsx"
       />
 
       <Dialog open={!!editingCategory} onOpenChange={(open) => { if (!open) setEditingCategory(null); }}>

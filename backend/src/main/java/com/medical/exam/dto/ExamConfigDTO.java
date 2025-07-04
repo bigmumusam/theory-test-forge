@@ -1,7 +1,5 @@
 package com.medical.exam.dto;
 
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 @Data
@@ -18,11 +16,15 @@ public class ExamConfigDTO {
     private Integer choiceCount;
     //判断题数量
     private Integer judgmentCount;
+
+    private Integer multiCount;
     //选择题分数
     private Integer choiceScore;
     //判断题分数
     private Integer judgmentScore;
 
-    private Integer pageNum = 1;
+    private Integer multiScore;
+
+    private Integer pageNumber = 1;
     private Integer pageSize = 10;
 }

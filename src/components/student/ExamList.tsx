@@ -35,7 +35,7 @@ const ExamList: React.FC<ExamListProps> = ({ user, onStartExam }) => {
     setLoading(true);
     try {
       const response = await post('/admin/available-questions/list', {
-        pageNum: 1,
+        pageNumber: 1,
         pageSize: 100
       });
       
@@ -63,6 +63,18 @@ const ExamList: React.FC<ExamListProps> = ({ user, onStartExam }) => {
   useEffect(() => {
     fetchAvailableExams();
   }, []);
+
+  // 排序：待开始 > 进行中 > 已完成/超时
+  const sortedExams = [...availableExams].sort((a, b) => {
+    const statusOrder = {
+      'pending': 0,
+      'notStarted': 0,
+      'in-progress': 1,
+      'completed': 2,
+      'timeout': 2
+    };
+    return (statusOrder[a.status] ?? 99) - (statusOrder[b.status] ?? 99);
+  });
 
   const handleRequestExam = (exam: AvailableExam) => {
     setSelectedExam(exam);
@@ -104,7 +116,7 @@ const ExamList: React.FC<ExamListProps> = ({ user, onStartExam }) => {
           studentId: user.id,
           questions: questions.map((q: any) => ({
             id: q.questionId,
-            type: q.questionType === 'choice' ? 'choice' : 'judgment',
+            type: q.questionType,
             content: q.questionContent,
             options: q.questionOptions ? JSON.parse(q.questionOptions) : undefined,
             correctAnswer: q.correctAnswer,
@@ -175,7 +187,7 @@ const ExamList: React.FC<ExamListProps> = ({ user, onStartExam }) => {
         </Card>
       ) : (
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {availableExams.map(exam => (
+          {sortedExams.map(exam => (
             <Card key={exam.paperId} className={`p-6 transition-all duration-300 ${
               exam.status === 'notStarted' || exam.status === 'pending'
               ? 'hover:shadow-lg hover:scale-105 cursor-pointer border-green-200' 
@@ -204,20 +216,18 @@ const ExamList: React.FC<ExamListProps> = ({ user, onStartExam }) => {
             </div>
             
             <div className="mt-6">
-                {(exam.status === 'notStarted' || exam.status === 'pending') ? (
-                <Button 
+                {exam.status === 'completed' ? (
+                  <Button disabled className="w-full">
+                    已完成
+                  </Button>
+                ) : (
+                  <Button 
                     onClick={() => handleRequestExam(exam)}
-                  className="w-full bg-green-600 hover:bg-green-700"
-                >
-                  开始考试
-                </Button>
-              ) : (
-                <Button disabled className="w-full">
-                    {exam.status === 'completed' ? '已完成' : 
-                     exam.status === 'in-progress' ? '进行中' : 
-                     exam.status === 'timeout' ? '已超时' : '暂不可参加'}
-                </Button>
-              )}
+                    className="w-full bg-green-600 hover:bg-green-700"
+                  >
+                    {exam.status === 'in-progress' ? '继续考试' : '开始考试'}
+                  </Button>
+                )}
             </div>
           </Card>
         ))}

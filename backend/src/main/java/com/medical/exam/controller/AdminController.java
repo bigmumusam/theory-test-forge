@@ -7,6 +7,7 @@ import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Map;
 
@@ -47,6 +48,20 @@ public class AdminController {
     public Result<?> batchDeleteQuestions(@RequestBody Map<String, Object> request) {
         adminService.batchDeleteQuestions(request);
         return Result.success("批量删除成功");
+    }
+
+    @PostMapping("/questions/import")
+    public Result<?> importQuestions(@RequestParam("file") MultipartFile file) {
+        if (file.isEmpty()) {
+            return Result.error("请选择文件上传");
+        }
+        // 验证文件类型
+        String originalFilename = file.getOriginalFilename();
+        if (originalFilename == null ||
+                (!originalFilename.endsWith(".xls") && !originalFilename.endsWith(".xlsx"))) {
+            return Result.error("仅支持Excel文件(.xls, .xlsx)");
+        }
+        return Result.success(adminService.importQuestions(file));
     }
 
     //查询题目

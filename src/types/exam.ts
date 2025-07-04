@@ -43,7 +43,7 @@ export interface ExamPaperQueryParams {
   paperName?: string;
   categoryId?: string;
   status?: string;
-  pageNum: number;
+  pageNumber: number;
   pageSize: number;
 }
 

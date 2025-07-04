@@ -98,8 +98,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-6 bg-white p-1 h-12">
             <TabsTrigger value="overview" className="h-10">系统概览</TabsTrigger>
-            <TabsTrigger value="users" className="h-10">人员管理</TabsTrigger>
-            <TabsTrigger value="roles" className="h-10">角色管理</TabsTrigger>
+            {user.role === 'admin' && (
+              <TabsTrigger value="users" className="h-10">人员管理</TabsTrigger>
+            )}
+            {user.role === 'admin' && (
+              <TabsTrigger value="roles" className="h-10">角色管理</TabsTrigger>
+            )}
             <TabsTrigger value="questions" className="h-10">题库管理</TabsTrigger>
             <TabsTrigger value="config" className="h-10">考试配置</TabsTrigger>
             <TabsTrigger value="results" className="h-10">考试结果</TabsTrigger>
@@ -165,7 +169,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                       <div key={idx} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
                         <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                         <div className="flex-1">
-                          <p className="text-sm font-medium text-gray-800">{log.content}</p>
+                          <p className="text-sm font-medium text-gray-800">{log.userName ? `${log.userName} ${log.content}` : log.content}</p>
                           <p className="text-xs text-gray-600">{log.createTime ? new Date(log.createTime).toLocaleString() : ''}</p>
                         </div>
                       </div>
@@ -183,13 +187,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             </div>
           </TabsContent>
 
-          <TabsContent value="users">
-            <UserManager />
-          </TabsContent>
+          {user.role === 'admin' && (
+            <TabsContent value="users">
+              <UserManager />
+            </TabsContent>
+          )}
 
-          <TabsContent value="roles">
-            <RoleManager />
-          </TabsContent>
+          {user.role === 'admin' && (
+            <TabsContent value="roles">
+              <RoleManager />
+            </TabsContent>
+          )}
 
           <TabsContent value="questions">
             <QuestionBankManager />
