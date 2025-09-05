@@ -17,6 +17,8 @@ public class UserUpdateRequestDTO {
 
     private String department;
     
+    private String userCategory;
+    
     private String status;
 
     // Constructors

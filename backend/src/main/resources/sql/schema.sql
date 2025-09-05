@@ -8,6 +8,7 @@ CREATE TABLE `sys_user` (
   `user_name` varchar(30) NOT NULL COMMENT '用户姓名',
   `role` varchar(20) NOT NULL DEFAULT 'student' COMMENT '用户角色(admin:管理员,student:学员)',
   `department` varchar(50) DEFAULT NULL COMMENT '科室',
+  `user_category` varchar(20) DEFAULT '指挥管理军官' COMMENT '人员类别(指挥管理军官,专业技术军官,文职,军士,聘用制)',
   `status` char(1) DEFAULT '1' COMMENT '账号状态（1正常 0停用）',
   `login_ip` varchar(128) DEFAULT '' COMMENT '最后登录IP',
   `login_date` datetime DEFAULT NULL COMMENT '最后登录时间',
@@ -64,6 +65,9 @@ CREATE TABLE `exam_category` (
   `category_id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '分类ID',
   `category_name` varchar(50) NOT NULL COMMENT '分类名称',
   `category_code` varchar(20) NOT NULL COMMENT '分类编码',
+  `parent_id` bigint(20) DEFAULT NULL COMMENT '父级分类ID',
+  `level` int(11) DEFAULT 1 COMMENT '层级深度(1:一级分类,2:二级分类,3:三级分类)',
+  `sort_order` int(11) DEFAULT 0 COMMENT '排序顺序',
   `status` char(1) DEFAULT '1' COMMENT '状态（1正常 0停用）',
   `create_dept` bigint(20) DEFAULT NULL COMMENT '创建部门',
   `create_by` bigint(20) DEFAULT NULL COMMENT '创建者',
@@ -73,6 +77,8 @@ CREATE TABLE `exam_category` (
   `remark` varchar(500) DEFAULT '' COMMENT '备注',
   PRIMARY KEY (`category_id`),
   UNIQUE KEY `uk_category_code` (`category_code`),
+  KEY `idx_parent_id` (`parent_id`),
+  KEY `idx_level` (`level`),
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='题目分类表';
 
@@ -85,7 +91,6 @@ CREATE TABLE `exam_question` (
   `correct_answer` varchar(200) NOT NULL COMMENT '正确答案',
   `category_id` bigint(20) NOT NULL COMMENT '分类ID',
   `difficulty` varchar(20) DEFAULT 'medium' COMMENT '难度等级(easy:简单,medium:中等,hard:困难)',
-  `score` int(11) DEFAULT 1 COMMENT '题目分值',
   `status` char(1) DEFAULT '1' COMMENT '状态（1正常 0停用）',
   `create_dept` bigint(20) DEFAULT NULL COMMENT '创建部门',
   `create_by` bigint(20) DEFAULT NULL COMMENT '创建者',
@@ -106,6 +111,7 @@ CREATE TABLE `exam_config` (
   `config_id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '配置ID',
   `config_name` varchar(100) NOT NULL COMMENT '配置名称',
   `category_id` bigint(20) NOT NULL COMMENT '分类ID',
+  `user_category` varchar(20) DEFAULT '指挥管理军官' COMMENT '人员类别(指挥管理军官,专业技术军官,文职,军士,聘用制)',
   `duration` int(11) NOT NULL COMMENT '考试时长(分钟)',
   `total_score` int(11) NOT NULL COMMENT '总分',
   `pass_score` int(11) DEFAULT 60 COMMENT '及格分数',
@@ -151,6 +157,23 @@ CREATE TABLE `exam_paper` (
   CONSTRAINT `fk_paper_category` FOREIGN KEY (`category_id`) REFERENCES `exam_category` (`category_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='生成试卷表';
 
+-- 考生强制重考配置表
+CREATE TABLE `exam_force_retake` (
+  `force_retake_id` varchar(20) NOT NULL COMMENT '主键ID',
+  `user_id` varchar(20) NOT NULL COMMENT '用户ID',
+  `paper_id` varchar(20) NOT NULL COMMENT '试卷ID',
+  `force_retake` int(11) DEFAULT 1 COMMENT '强制重考标识(0:正常,1:管理员要求重考)',
+  `create_by` varchar(20) DEFAULT NULL COMMENT '创建者',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_by` varchar(20) DEFAULT NULL COMMENT '更新者',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `remark` varchar(500) DEFAULT '' COMMENT '备注',
+  PRIMARY KEY (`force_retake_id`),
+  UNIQUE KEY `uk_user_paper` (`user_id`, `paper_id`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_paper_id` (`paper_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='考生强制重考配置表';
+
 -- 试卷题目关联表
 CREATE TABLE `exam_paper_question` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -187,6 +210,7 @@ CREATE TABLE `exam_record` (
   `update_by` bigint(20) DEFAULT NULL COMMENT '更新者',
   `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `remark` varchar(500) DEFAULT '' COMMENT '备注',
+  `retake` int(11) DEFAULT 0 COMMENT '重考标识(0:正常考试,1:重考)',
   PRIMARY KEY (`record_id`),
   KEY `idx_user_id` (`user_id`),
   KEY `idx_paper_id` (`paper_id`),
@@ -246,12 +270,12 @@ INSERT INTO `sys_role` (`role_name`, `role_key`, `role_sort`, `remark`) VALUES
 ('普通考生', 'student', 2, '普通考生，只能参加考试'),
 ('考试管理员', 'exam_admin', 3, '负责考试管理');
 
-INSERT INTO `sys_user` (`id_number`, `user_name`, `role`, `department`) VALUES
-('110101199001011234', '管理员', 'admin', '系统管理'),
-('110101199001011111', '张医生', 'student', '消化内科'),
-('110101199002022222', '李护士', 'student', '肝胆外科'),
-('110101199003033333', '王医生', 'student', '消化内科'),
-('110101199004044444', '赵技师', 'student', '心血管内科');
+INSERT INTO `sys_user` (`id_number`, `user_name`, `role`, `department`, `user_category`) VALUES
+('110101199001011234', '管理员', 'admin', '系统管理', '指挥管理军官'),
+('110101199001011111', '张医生', 'student', '消化内科', '专业技术军官'),
+('110101199002022222', '李护士', 'student', '肝胆外科', '文职'),
+('110101199003033333', '王医生', 'student', '消化内科', '专业技术军官'),
+('110101199004044444', '赵技师', 'student', '心血管内科', '军士');
 
 INSERT INTO `exam_category` (`category_name`, `category_code`) VALUES
 ('消化内科', 'CAT_01'),
@@ -260,21 +284,28 @@ INSERT INTO `exam_category` (`category_name`, `category_code`) VALUES
 ('呼吸内科', 'CAT_04');
 
 -- 插入示例题目数据
-INSERT INTO `exam_question` (`question_type`, `question_content`, `question_options`, `correct_answer`, `category_id`, `difficulty`, `score`) VALUES
-('choice', '胃溃疡最常见的并发症是？', '["穿孔", "出血", "幽门梗阻", "癌变"]', '1', 1, 'medium', 2),
-('judgment', 'Hp感染是胃溃疡的主要病因之一', NULL, '正确', 1, 'easy', 1),
-('choice', '急性胃炎最常见的病因是？', '["饮食不当", "药物因素", "感染", "应激"]', '0', 1, 'medium', 2),
-('choice', '胆囊炎最典型的症状是？', '["右上腹痛", "恶心呕吐", "发热", "黄疸"]', '0', 2, 'medium', 2),
-('judgment', '胆结石患者都需要手术治疗', NULL, '错误', 2, 'easy', 1);
+INSERT INTO `exam_question` (`question_type`, `question_content`, `question_options`, `correct_answer`, `category_id`, `difficulty`) VALUES
+('choice', '胃溃疡最常见的并发症是？', '["穿孔", "出血", "幽门梗阻", "癌变"]', '1', 1, 'medium'),
+('judgment', 'Hp感染是胃溃疡的主要病因之一', NULL, '正确', 1, 'easy'),
+('choice', '急性胃炎最常见的病因是？', '["饮食不当", "药物因素", "感染", "应激"]', '0', 1, 'medium'),
+('choice', '胆囊炎最典型的症状是？', '["右上腹痛", "恶心呕吐", "发热", "黄疸"]', '0', 2, 'medium'),
+('judgment', '胆结石患者都需要手术治疗', NULL, '错误', 2, 'easy');
 
 -- 插入示例考试配置
-INSERT INTO `exam_config` (`config_name`, `category_id`, `duration`, `total_score`, `pass_score`, `choice_count`, `judgment_count`, `choice_score`, `judgment_score`) VALUES
-('消化内科理论考试', 1, 90, 100, 60, 40, 20, 2, 1),
-('肝胆外科专业考试', 2, 120, 100, 60, 35, 30, 2, 1);
+INSERT INTO `exam_config` (`config_name`, `category_id`, `user_category`, `duration`, `total_score`, `pass_score`, `choice_count`, `judgment_count`, `choice_score`, `judgment_score`) VALUES
+('消化内科理论考试', 1, '专业技术军官', 90, 100, 60, 40, 20, 2, 1),
+('肝胆外科专业考试', 2, '专业技术军官', 120, 100, 60, 35, 30, 2, 1);
 
 -- 创建索引优化查询性能
 CREATE INDEX `idx_exam_record_composite` ON `exam_record` (`user_id`, `status`, `start_time`);
 CREATE INDEX `idx_exam_answer_composite` ON `exam_answer` (`record_id`, `is_correct`);
 CREATE INDEX `idx_question_composite` ON `exam_question` (`category_id`, `difficulty`, `status`);
 CREATE INDEX `idx_paper_composite` ON `exam_paper` (`category_id`, `status`, `create_time`);
+
+-- 并发控制相关索引
+CREATE INDEX `idx_exam_record_user_paper_status` ON `exam_record` (`user_id`, `paper_id`, `status`, `retake`);
+CREATE INDEX `idx_exam_record_status_lock` ON `exam_record` (`record_id`, `user_id`, `status`);
+CREATE INDEX `idx_exam_answer_record_unique` ON `exam_answer` (`record_id`, `question_id`);
+-- 注意：MySQL不支持带WHERE条件的唯一索引，这里改为普通索引
+CREATE INDEX `idx_exam_record_user_paper_retake` ON `exam_record` (`user_id`, `paper_id`, `retake`);
 

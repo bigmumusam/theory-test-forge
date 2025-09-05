@@ -36,6 +36,7 @@ export interface ExamPaperListItem {
   createBy: string;
   status: string;
   usageCount: number;
+  userCategory: string; // 人员类别
 }
 
 // 试卷列表查询参数
@@ -67,6 +68,7 @@ export interface ExamConfig {
   id: string;
   name: string;
   categories: string[];
+  userCategory?: string; // 人员类别
   questionTypes: {
     choice: { count: number; score: number };
     multi: { count: number; score: number };

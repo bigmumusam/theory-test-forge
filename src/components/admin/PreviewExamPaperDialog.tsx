@@ -60,6 +60,10 @@ const PreviewExamPaperDialog: React.FC<PreviewExamPaperDialogProps> = ({ open, o
                 <span>{paper.categoryName}</span>
               </div>
               <div className="flex justify-between">
+                <span className="text-gray-600">人员类别：</span>
+                <span className="text-blue-600 font-medium">{paper.userCategory || '指挥管理军官'}</span>
+              </div>
+              <div className="flex justify-between">
                 <span className="text-gray-600">时长：</span>
                 <span>{paper.duration}分钟</span>
               </div>

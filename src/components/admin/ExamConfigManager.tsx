@@ -14,6 +14,22 @@ import { useOptions } from '../../context/OptionsContext';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
+// 递归查找分类名称
+const getCategoryNameById = (categories: any[], categoryId: string): string | null => {
+  if (!categories) return null;
+  
+  for (const category of categories) {
+    if (category.categoryId === categoryId) {
+      return category.categoryName;
+    }
+    if (category.children && category.children.length > 0) {
+      const found = getCategoryNameById(category.children, categoryId);
+      if (found) return found;
+    }
+  }
+  return null;
+};
+
 const ExamConfigManager: React.FC = () => {
   const [examConfigs, setExamConfigs] = useState<ExamConfig[]>([]);
   const [loading, setLoading] = useState(false);
@@ -21,6 +37,7 @@ const ExamConfigManager: React.FC = () => {
   const [newConfig, setNewConfig] = useState<Partial<ExamConfig>>({
     name: '',
     categories: [],
+    userCategory: '指挥管理军官',
     questionTypes: {
       choice: { count: 30, score: 2 },
       multi: { count: 0, score: 4 },
@@ -32,7 +49,34 @@ const ExamConfigManager: React.FC = () => {
 
   const { toast } = useToast();
   const { options } = useOptions();
-  const categories = options?.categories ? Object.entries(options.categories) : [];
+  
+  // 递归获取所有分类选项
+  const getAllCategoryOptions = (categories: any[], level = 0): { value: string; label: string; level: number; hasChildren: boolean }[] => {
+    if (!Array.isArray(categories)) {
+      return [];
+    }
+    
+    const options: { value: string; label: string; level: number; hasChildren: boolean }[] = [];
+    
+    categories.forEach(category => {
+      const indent = '　'.repeat(level); // 使用全角空格进行缩进
+      const hasChildren = category.children && category.children.length > 0;
+      options.push({
+        value: category.categoryId,
+        label: `${indent}${category.categoryName}`,
+        level: level,
+        hasChildren: hasChildren
+      });
+      
+      if (hasChildren) {
+        options.push(...getAllCategoryOptions(category.children, level + 1));
+      }
+    });
+    
+    return options;
+  };
+  
+  const categories = Array.isArray(options?.categories) ? getAllCategoryOptions(options.categories) : [];
 
   const [configPage, setConfigPage] = useState(1);
   const configsPerPage = 6;
@@ -62,11 +106,12 @@ const ExamConfigManager: React.FC = () => {
         id: item.configId,
         name: item.configName,
         categories: item.categoryId ? [item.categoryId] : [],
-          questionTypes: {
+        userCategory: item.userCategory || '指挥管理军官',
+        questionTypes: {
           choice: { count: item.choiceCount, score: item.choiceScore },
           multi: { count: item.multiCount, score: item.multiScore },
           judgment: { count: item.judgmentCount, score: item.judgmentScore }
-          },
+        },
         duration: item.duration,
         totalScore: item.totalScore
       }));
@@ -178,15 +223,16 @@ const ExamConfigManager: React.FC = () => {
       const body = {
         configName: newConfig.name,
         categoryId: newConfig.categories?.[0],
+        userCategory: newConfig.userCategory,
         duration: newConfig.duration,
-        totalScore: 100,
+        totalScore: calculateTotalScore(newConfig),
         passScore: 60, // 可根据需要调整
         choiceCount: newConfig.questionTypes?.choice.count,
         multiCount: newConfig.questionTypes?.multi.count,
         judgmentCount: newConfig.questionTypes?.judgment.count,
-        choiceScore: 2,
-        multiScore: 4,
-        judgmentScore: 2,
+        choiceScore: newConfig.questionTypes?.choice.score,
+        multiScore: newConfig.questionTypes?.multi.score,
+        judgmentScore: newConfig.questionTypes?.judgment.score,
         remark: '',
       };
       await request('/admin/exam-configs/add', {
@@ -201,6 +247,7 @@ const ExamConfigManager: React.FC = () => {
       setNewConfig({
         name: '',
         categories: [],
+        userCategory: '指挥管理军官',
         questionTypes: {
           choice: { count: 30, score: 2 },
           multi: { count: 0, score: 4 },
@@ -234,11 +281,13 @@ const ExamConfigManager: React.FC = () => {
         description: "已删除考试配置"
       });
       fetchExamConfigs();
-    } catch (error) {
+    } catch (error: any) {
       console.error('删除考试配置失败:', error);
+      // 检查是否是业务逻辑错误（有试卷无法删除）
+      const errorMessage = error?.response?.data?.message || error?.message || "删除考试配置失败，请重试";
       toast({
         title: "删除失败",
-        description: "删除考试配置失败，请重试",
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {
@@ -259,6 +308,7 @@ const ExamConfigManager: React.FC = () => {
         configId: config.id,
         configName: config.name,
         categoryId: config.categories?.[0],
+        userCategory: config.userCategory || '指挥管理军官',
         duration: config.duration,
         totalScore: config.totalScore,
         passScore: 60, // 可根据需要调整
@@ -378,13 +428,15 @@ const ExamConfigManager: React.FC = () => {
                 <div>
                   <Label>考试题目分类</Label>
                     <Select value={newConfig.categories?.[0] || ''} onValueChange={(value) => setNewConfig({...newConfig, categories: [value]})}>
-                      <SelectTrigger className="w-40">
+                      <SelectTrigger className="w-80">
                         <SelectValue placeholder="选择题目分类" />
                     </SelectTrigger>
                     <SelectContent>
                         {categories.length > 0 ? (
-                          categories.map(([key, value]) => (
-                            <SelectItem key={key} value={key}>{value}</SelectItem>
+                          categories.map((option) => (
+                            <SelectItem key={option.value} value={option.value} disabled={option.hasChildren}>
+                              {option.label}
+                            </SelectItem>
                           ))
                         ) : (
                           <SelectItem value="" disabled>暂无题目分类数据</SelectItem>
@@ -392,11 +444,28 @@ const ExamConfigManager: React.FC = () => {
                     </SelectContent>
                   </Select>
                 </div>
+                <div>
+                  <Label>人员类别</Label>
+                  <Select value={newConfig.userCategory || '指挥管理军官'} onValueChange={(value) => setNewConfig({...newConfig, userCategory: value})}>
+                    <SelectTrigger className="w-80">
+                      <SelectValue placeholder="选择人员类别" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="指挥管理军官">指挥管理军官</SelectItem>
+                      <SelectItem value="专业技术军官">专业技术军官</SelectItem>
+                      <SelectItem value="文职">文职</SelectItem>
+                      <SelectItem value="军士">军士</SelectItem>
+                      <SelectItem value="聘用制">聘用制</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="space-y-3">
                   <Label>题型配置</Label>
                     <div className="grid grid-cols-4 gap-1 items-center">
                     <span className="text-sm font-medium">选择题</span>
-                      <span className="text-xs text-gray-500">{availableCounts ? `可选数量${availableCounts.choice}` : ''}</span>
+                      <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-1 rounded-full">
+                        {availableCounts ? `可选: ${availableCounts.choice}` : '加载中...'}
+                      </span>
                     <Input 
                       type="number" 
                         placeholder="数量"
@@ -415,15 +484,23 @@ const ExamConfigManager: React.FC = () => {
                         type="number" 
                         placeholder="分值"
                           className="w-14 px-2 text-center"
-                        value={2}
-                        disabled
+                        value={newConfig.questionTypes?.choice.score}
+                        onChange={(e) => setNewConfig({
+                          ...newConfig, 
+                          questionTypes: {
+                            ...newConfig.questionTypes!,
+                            choice: { ...newConfig.questionTypes!.choice, score: parseInt(e.target.value) || 2 }
+                          }
+                        })}
                       />
                         <span className="text-sm text-gray-600 whitespace-nowrap">分/题</span>
                       </div>
                     </div>
                     <div className="grid grid-cols-4 gap-1 items-center">
                     <span className="text-sm font-medium">多选题</span>
-                      <span className="text-xs text-gray-500">{availableCounts ? `可选数量${availableCounts.multi}` : ''}</span>
+                      <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-1 rounded-full">
+                        {availableCounts ? `可选: ${availableCounts.multi}` : '加载中...'}
+                      </span>
                     <Input 
                       type="number" 
                         placeholder="数量"
@@ -442,15 +519,23 @@ const ExamConfigManager: React.FC = () => {
                         type="number" 
                         placeholder="分值"
                           className="w-14 px-2 text-center"
-                        value={4}
-                        disabled
+                        value={newConfig.questionTypes?.multi.score}
+                        onChange={(e) => setNewConfig({
+                          ...newConfig, 
+                          questionTypes: {
+                            ...newConfig.questionTypes!,
+                            multi: { ...newConfig.questionTypes!.multi, score: parseInt(e.target.value) || 4 }
+                          }
+                        })}
                       />
                         <span className="text-sm text-gray-600 whitespace-nowrap">分/题</span>
                       </div>
                     </div>
                     <div className="grid grid-cols-4 gap-1 items-center">
                     <span className="text-sm font-medium">判断题</span>
-                      <span className="text-xs text-gray-500">{availableCounts ? `可选数量${availableCounts.judgment}` : ''}</span>
+                      <span className="text-xs font-semibold text-purple-600 bg-purple-50 px-2 py-1 rounded-full">
+                        {availableCounts ? `可选: ${availableCounts.judgment}` : '加载中...'}
+                      </span>
                     <Input 
                       type="number" 
                         placeholder="数量"
@@ -469,8 +554,14 @@ const ExamConfigManager: React.FC = () => {
                         type="number" 
                         placeholder="分值"
                           className="w-14 px-2 text-center"
-                        value={2}
-                        disabled
+                        value={newConfig.questionTypes?.judgment.score}
+                        onChange={(e) => setNewConfig({
+                          ...newConfig, 
+                          questionTypes: {
+                            ...newConfig.questionTypes!,
+                            judgment: { ...newConfig.questionTypes!.judgment, score: parseInt(e.target.value) || 2 }
+                          }
+                        })}
                       />
                         <span className="text-sm text-gray-600 whitespace-nowrap">分/题</span>
                       </div>
@@ -534,7 +625,11 @@ const ExamConfigManager: React.FC = () => {
                           <div className="space-y-2 flex-1">
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">考试题目分类：</span>
-                              <span>{config.categories.map(cid => options?.categories?.[cid] || cid).join(', ')}</span>
+                              <span>{config.categories.map(cid => getCategoryNameById(options?.categories, cid) || cid).join(', ')}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">人员类别：</span>
+                        <span className="text-blue-600 font-medium">{config.userCategory || '指挥管理军官'}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">考试时长：</span>
@@ -625,13 +720,30 @@ const ExamConfigManager: React.FC = () => {
               <div>
                 <Label>考试题目分类</Label>
                 <Select value={editForm.categories?.[0] || ''} onValueChange={value => setEditForm({ ...editForm, categories: [value] })}>
-                  <SelectTrigger className="w-40">
+                  <SelectTrigger className="w-80">
                     <SelectValue placeholder="选择题目分类" />
                   </SelectTrigger>
                   <SelectContent>
-                    {categories.map(([key, value]) => (
-                      <SelectItem key={key} value={key}>{value}</SelectItem>
+                    {categories.map((option) => (
+                      <SelectItem key={option.value} value={option.value} disabled={option.hasChildren}>
+                        {option.label}
+                      </SelectItem>
                     ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>人员类别</Label>
+                <Select value={editForm.userCategory || '指挥管理军官'} onValueChange={value => setEditForm({ ...editForm, userCategory: value })}>
+                  <SelectTrigger className="w-80">
+                    <SelectValue placeholder="选择人员类别" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="指挥管理军官">指挥管理军官</SelectItem>
+                    <SelectItem value="专业技术军官">专业技术军官</SelectItem>
+                    <SelectItem value="文职">文职</SelectItem>
+                    <SelectItem value="军士">军士</SelectItem>
+                    <SelectItem value="聘用制">聘用制</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -639,7 +751,9 @@ const ExamConfigManager: React.FC = () => {
                 <Label>题型配置</Label>
                 <div className="grid grid-cols-4 gap-1 items-center">
                   <span className="text-sm font-medium">选择题</span>
-                  <span className="text-xs text-gray-500">{editAvailableCounts ? `可选数量${editAvailableCounts.choice}` : ''}</span>
+                  <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-1 rounded-full">
+                    {editAvailableCounts ? `可选: ${editAvailableCounts.choice}` : '加载中...'}
+                  </span>
                   <Input 
                     type="number" 
                     placeholder="数量"
@@ -661,7 +775,9 @@ const ExamConfigManager: React.FC = () => {
                 </div>
                 <div className="grid grid-cols-4 gap-1 items-center">
                   <span className="text-sm font-medium">多选题</span>
-                  <span className="text-xs text-gray-500">{editAvailableCounts ? `可选数量${editAvailableCounts.multi}` : ''}</span>
+                  <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-1 rounded-full">
+                    {editAvailableCounts ? `可选: ${editAvailableCounts.multi}` : '加载中...'}
+                  </span>
                   <Input 
                     type="number" 
                     placeholder="数量"
@@ -683,7 +799,9 @@ const ExamConfigManager: React.FC = () => {
                 </div>
                 <div className="grid grid-cols-4 gap-1 items-center">
                   <span className="text-sm font-medium">判断题</span>
-                  <span className="text-xs text-gray-500">{editAvailableCounts ? `可选数量${editAvailableCounts.judgment}` : ''}</span>
+                  <span className="text-xs font-semibold text-purple-600 bg-purple-50 px-2 py-1 rounded-full">
+                    {editAvailableCounts ? `可选: ${editAvailableCounts.judgment}` : '加载中...'}
+                  </span>
                   <Input 
                     type="number" 
                     placeholder="数量"

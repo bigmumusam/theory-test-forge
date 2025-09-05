@@ -7,6 +7,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { 
+  AlertDialog, 
+  AlertDialogAction, 
+  AlertDialogCancel, 
+  AlertDialogContent, 
+  AlertDialogDescription, 
+  AlertDialogFooter, 
+  AlertDialogHeader, 
+  AlertDialogTitle 
+} from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { Upload } from 'lucide-react';
 import { Question, Category } from '../../types/exam';
@@ -15,6 +25,188 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/
 import { request } from '@/lib/request';
 import { useOptions } from '../../context/OptionsContext';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink } from '@/components/ui/pagination';
+
+// 层级颜色配置
+const levelColors = [
+  'text-blue-600 bg-blue-50 border-blue-200', // 一级
+  'text-green-600 bg-green-50 border-green-200', // 二级
+  'text-purple-600 bg-purple-50 border-purple-200', // 三级
+  'text-orange-600 bg-orange-50 border-orange-200', // 四级
+  'text-red-600 bg-red-50 border-red-200', // 五级
+];
+
+// 分类列表项组件
+const CategoryCard: React.FC<{ 
+  category: any; 
+  onViewQuestions: () => void; 
+  onEdit: () => void;
+  level?: number;
+}> = ({ category, onViewQuestions, onEdit, level = 0 }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const indent = level * 24; // 每级缩进24px
+  const levelColor = levelColors[level] || levelColors[levelColors.length - 1];
+  const hasChildren = category.children && category.children.length > 0;
+  
+  return (
+    <div>
+      <div className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow" style={{ marginLeft: `${indent}px` }}>
+        <div className="flex items-center space-x-3 flex-1">
+          {hasChildren && (
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="w-5 h-5 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors"
+            >
+              {isExpanded ? (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              )}
+            </button>
+          )}
+          {!hasChildren && <div className="w-5"></div>}
+          
+          <div className="flex-1">
+            <div className="flex items-center space-x-3">
+              <h3 className={`text-lg font-semibold px-3 py-1 rounded ${levelColor}`}>
+                {category.categoryName}
+              </h3>
+              <span className="text-sm px-2 py-1 rounded bg-blue-100 text-blue-800">{category.questionCount || 0}题</span>
+            </div>
+            {category.remark && (
+              <p className="text-gray-600 text-sm mt-1">{category.remark}</p>
+            )}
+          </div>
+        </div>
+        
+        <div className="flex items-center space-x-2 ml-4">
+          {!hasChildren && (
+            <Button 
+              size="sm" 
+              variant="outline" 
+              onClick={onViewQuestions}
+            >
+              查看题目
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={onEdit}>
+            编辑
+          </Button>
+        </div>
+      </div>
+      
+      {hasChildren && isExpanded && (
+        <div className="mt-2 space-y-2">
+          {category.children.map((child: any) => (
+            <CategoryCard 
+              key={child.categoryId} 
+              category={child} 
+              onViewQuestions={onViewQuestions}
+              onEdit={onEdit}
+              level={level + 1}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// 递归查找分类
+const findCategoryById = (categories: any[], categoryId: string): any => {
+  for (const category of categories) {
+    if (category.categoryId === categoryId) {
+      return category;
+    }
+    if (category.children) {
+      const found = findCategoryById(category.children, categoryId);
+      if (found) return found;
+    }
+  }
+  return null;
+};
+
+// 递归获取所有分类选项
+const getAllCategoryOptions = (categories: any[], level = 0): { value: string; label: string; level: number }[] => {
+  const options: { value: string; label: string; level: number }[] = [];
+  
+  categories.forEach(category => {
+    options.push({
+      value: category.categoryId,
+      label: '　'.repeat(level) + category.categoryName,
+      level: level
+    });
+    
+    if (category.children && category.children.length > 0) {
+      options.push(...getAllCategoryOptions(category.children, level + 1));
+    }
+  });
+  
+  return options;
+};
+
+// 递归排序函数
+const sortCategories = (categories: any[]): any[] => {
+  return categories
+    .sort((a, b) => {
+      // 首先按层级排序
+      if (a.level !== b.level) {
+        return a.level - b.level;
+      }
+      // 然后按排序顺序排序
+      if (a.sortOrder !== b.sortOrder) {
+        return a.sortOrder - b.sortOrder;
+      }
+      // 最后按名称排序
+      return a.categoryName.localeCompare(b.categoryName);
+    })
+    .map(category => ({
+      ...category,
+      children: category.children ? sortCategories(category.children) : []
+    }));
+};
+
+// 递归渲染分类选项
+const renderCategoryOptions = (categories: any[], level = 0): React.ReactNode[] => {
+  if (!Array.isArray(categories)) {
+    return [];
+  }
+  
+  return categories.map(category => {
+    const indent = '　'.repeat(level); // 使用全角空格进行缩进
+    const label = `${indent}${category.categoryName}`;
+    const hasChildren = category.children && category.children.length > 0;
+    
+    return [
+      <SelectItem key={category.categoryId} value={category.categoryId} disabled={hasChildren}>
+        {label}
+      </SelectItem>,
+      ...(hasChildren 
+        ? renderCategoryOptions(category.children, level + 1) 
+        : []
+      )
+    ];
+  }).flat();
+};
+
+// 递归查找分类名称
+const getCategoryNameById = (categories: any[], categoryId: string): string | null => {
+  if (!categories || !Array.isArray(categories)) return null;
+  
+  for (const category of categories) {
+    if (category.categoryId === categoryId) {
+      return category.categoryName;
+    }
+    if (category.children && category.children.length > 0) {
+      const found = getCategoryNameById(category.children, categoryId);
+      if (found) return found;
+    }
+  }
+  return null;
+};
 
 const QuestionBankManager: React.FC = () => {
   const [categories, setCategories] = useState<any[]>([]);
@@ -68,7 +260,13 @@ const QuestionBankManager: React.FC = () => {
   const { toast } = useToast();
 
   const [editingCategory, setEditingCategory] = useState<any | null>(null);
-  const [editCategoryForm, setEditCategoryForm] = useState<{ name: string; description: string }>({ name: '', description: '' });
+  const [editCategoryForm, setEditCategoryForm] = useState<{ name: string; description: string; parentId: string; level: number; sortOrder: number }>({ 
+    name: '', 
+    description: '', 
+    parentId: '', 
+    level: 1, 
+    sortOrder: 0 
+  });
   const [tabValue, setTabValue] = useState<'categories' | 'questions'>('categories');
 
   const [searchKeyword, setSearchKeyword] = useState('');
@@ -85,7 +283,8 @@ const QuestionBankManager: React.FC = () => {
   const [selectedQuestions, setSelectedQuestions] = useState<string[]>([]);
 
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
-  const [addCategoryForm, setAddCategoryForm] = useState({ name: '', description: '' });
+  const [addCategoryForm, setAddCategoryForm] = useState({ name: '', description: '', parentId: '', level: 1, sortOrder: 0 });
+  
 
   const categoryPageSize = 9;
   const [categoryPage, setCategoryPage] = useState(1);
@@ -99,7 +298,37 @@ const QuestionBankManager: React.FC = () => {
   const [totalQuestionRows, setTotalQuestionRows] = useState(0);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
 
-  const { options } = useOptions();
+  const { options, setOptions } = useOptions();
+
+  // 确保options数据已加载
+  useEffect(() => {
+    if (!options?.categories) {
+      // 尝试从localStorage恢复
+      const optionsStr = localStorage.getItem('options');
+      if (optionsStr) {
+        try {
+          const savedOptions = JSON.parse(optionsStr);
+          setOptions(savedOptions);
+        } catch (e) {
+          console.error('解析localStorage中的options失败:', e);
+        }
+      } else {
+        // 如果localStorage中没有，主动获取
+        const fetchOptions = async () => {
+          try {
+            const optionsRes = await request('/admin/options', {
+              method: 'POST',
+            });
+            setOptions(optionsRes.data);
+            localStorage.setItem('options', JSON.stringify(optionsRes.data));
+          } catch (e) {
+            console.error('获取options失败:', e);
+          }
+        };
+        fetchOptions();
+      }
+    }
+  }, [options, setOptions]);
 
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; type: 'single' | 'batch'; id?: string }>(
     { open: false, type: 'single' }
@@ -134,33 +363,26 @@ const QuestionBankManager: React.FC = () => {
   };
   const handleBatchDelete = () => {
     if (selectedQuestions.length === 0) return;
-    if (!window.confirm(`确定要批量删除选中的${selectedQuestions.length}道题目吗？`)) return;
-    setQuestions(qs => qs.filter(q => !selectedQuestions.includes(q.id)));
-    setSelectedQuestions([]);
-    toast({ title: '批量删除成功' });
+    setDeleteType('batch');
+    setDeleteDialogOpen(true);
   };
 
   const handleAddCategory = () => {
-    setAddCategoryForm({ name: '', description: '' });
+    setAddCategoryForm({ name: '', description: '', parentId: 'none', level: 1, sortOrder: 0 });
     setIsAddCategoryOpen(true);
   };
 
   const fetchCategories = async (page = 1) => {
     setLoadingCategories(true);
     try {
-      const res = await request('/admin/categories', {
-        method: 'POST',
-        body: JSON.stringify({ pageNumber: page, pageSize: categoryPageSize })
+      // 获取树形分类结构
+      const res = await request('/admin/categories/tree', {
+        method: 'POST'
       });
-      const data = res.data;
-      setCategories((data.records || []).map(cat => ({
-        categoryId: cat.categoryId || cat.id,
-        categoryName: cat.categoryName || cat.name,
-        remark: cat.remark,
-        questionCount: cat.questionCount,
-      })));
-      setTotalCategoryPages(data.totalPage || 1);
-      setTotalCategoryRows(data.totalRow || 0);
+      const categories = res.data || [];
+      setCategories(categories);
+      setTotalCategoryPages(1);
+      setTotalCategoryRows(categories.length);
     } finally {
       setLoadingCategories(false);
     }
@@ -171,13 +393,29 @@ const QuestionBankManager: React.FC = () => {
   }, []);
 
   const handleSaveAddCategory = async () => {
-    if (!addCategoryForm.name.trim() || !addCategoryForm.description.trim()) {
-      toast({ title: '请填写完整信息', variant: 'destructive' });
+    if (!addCategoryForm.name.trim()) {
+      toast({ title: '请填写分类名称', variant: 'destructive' });
       return;
     }
+    
+    // 计算层级
+    let level = 1;
+    let parentId = null;
+    if (addCategoryForm.parentId && addCategoryForm.parentId !== 'none') {
+      const parentCategory = findCategoryById(categories, addCategoryForm.parentId);
+      level = parentCategory ? parentCategory.level + 1 : 1;
+      parentId = addCategoryForm.parentId;
+    }
+    
     await request('/admin/categories/add', {
       method: 'POST',
-      body: JSON.stringify({ categoryName: addCategoryForm.name })
+      body: JSON.stringify({ 
+        categoryName: addCategoryForm.name,
+        remark: addCategoryForm.description,
+        parentId: parentId,
+        level: level,
+        sortOrder: addCategoryForm.sortOrder
+      })
     });
     setIsAddCategoryOpen(false);
     toast({ title: '题目分类添加成功', description: `已添加题目分类：${addCategoryForm.name}` });
@@ -190,11 +428,21 @@ const QuestionBankManager: React.FC = () => {
   };
 
   const handleSaveEditCategory = async () => {
-    if (!editCategoryForm.name.trim() || !editCategoryForm.description.trim()) {
-      toast({ title: '请填写完整的题目分类信息', variant: 'destructive' });
+    if (!editCategoryForm.name.trim()) {
+      toast({ title: '请填写分类名称', variant: 'destructive' });
       return;
     }
     if (!editingCategory) return;
+    
+    // 计算层级
+    let level = 1;
+    let parentId = null;
+    if (editCategoryForm.parentId && editCategoryForm.parentId !== 'none') {
+      const parentCategory = findCategoryById(categories, editCategoryForm.parentId);
+      level = parentCategory ? parentCategory.level + 1 : 1;
+      parentId = editCategoryForm.parentId;
+    }
+    
     try {
       await request('/admin/categories/update', {
         method: 'POST',
@@ -202,6 +450,9 @@ const QuestionBankManager: React.FC = () => {
           categoryId: editingCategory.categoryId,
           categoryName: editCategoryForm.name,
           remark: editCategoryForm.description,
+          parentId: parentId,
+          level: level,
+          sortOrder: editCategoryForm.sortOrder,
         }),
       });
       setEditingCategory(null);
@@ -275,15 +526,6 @@ const QuestionBankManager: React.FC = () => {
     });
   };
 
-  const handleDeleteQuestion = async (questionId: string) => {
-    if (!window.confirm('确定要删除这道题目吗？')) return;
-    await request('/admin/questions/delete', {
-      method: 'POST',
-      body: JSON.stringify({ id: questionId })
-    });
-    toast({ title: '题目已删除' });
-    fetchQuestions(questionPage);
-  };
 
   const handleImportQuestions = async (file: File) => {
     const formData = new FormData();
@@ -528,9 +770,13 @@ const QuestionBankManager: React.FC = () => {
                         <SelectValue placeholder="选择题目分类" />
                       </SelectTrigger>
                       <SelectContent>
-                        {options?.categories && Object.entries(options.categories).map(([key, value]) => (
-                          <SelectItem key={key} value={key}>{value}</SelectItem>
-                        ))}
+                        {Array.isArray(options?.categories) ? (
+                          renderCategoryOptions(options.categories)
+                        ) : (
+                          <SelectItem value="" disabled>
+                            {options?.categories ? '分类数据格式错误' : '暂无分类数据'}
+                          </SelectItem>
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
@@ -659,42 +905,31 @@ const QuestionBankManager: React.FC = () => {
         </TabsList>
 
         <TabsContent value="categories">
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {categories.map(category => {
-              const colorClass = getCategoryColor(category.categoryId);
-              const textColor = colorClass.split(' ')[0];
-              return (
-                <Card key={category.categoryId} className="p-6 hover:shadow-lg transition-shadow">
-                  <div className="flex justify-between items-start mb-4">
-                    <h3 className={`text-lg font-semibold ${textColor}`}>{category.categoryName}</h3>
-                    <span className="text-sm px-2 py-1 rounded bg-blue-100 text-blue-800">{category.questionCount}题</span>
-                  </div>
-                  <p className="text-gray-600 text-sm mb-4">{category.remark || ''}</p>
-                  <div className="flex space-x-2">
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => {
-                        setSelectedCategory(category.categoryId);
-                        setTabValue('questions');
-                        setTimeout(() => {
-                          const questionList = document.getElementById('question-list-section');
-                          if (questionList) questionList.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        }, 200);
-                      }}
-                    >
-                      查看题目
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => {
-                      setEditingCategory(category);
-                      setEditCategoryForm({ name: category.categoryName, description: category.remark });
-                    }}>
-                      编辑
-                    </Button>
-                  </div>
-                </Card>
-              );
-            })}
+          <div className="space-y-4">
+            {sortCategories(categories).map(category => (
+              <CategoryCard 
+                key={category.categoryId} 
+                category={category} 
+                onViewQuestions={() => {
+                  setSelectedCategory(category.categoryId);
+                  setTabValue('questions');
+                  setTimeout(() => {
+                    const questionList = document.getElementById('question-list-section');
+                    if (questionList) questionList.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }, 200);
+                }}
+                onEdit={() => {
+                  setEditingCategory(category);
+                  setEditCategoryForm({ 
+                    name: category.categoryName, 
+                    description: category.remark,
+                    parentId: category.parentId || 'none',
+                    level: category.level || 1,
+                    sortOrder: category.sortOrder || 0
+                  });
+                }}
+              />
+            ))}
           </div>
           {/* 题目分类分页 */}
           {tabValue === 'categories' && (
@@ -742,9 +977,13 @@ const QuestionBankManager: React.FC = () => {
                 <SelectTrigger className="w-40"><SelectValue placeholder="选择题目分类筛选" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部题目分类</SelectItem>
-                  {options?.categories && Object.entries(options.categories).map(([key, value]) => (
-                    <SelectItem key={key} value={key}>{value}</SelectItem>
-                  ))}
+                  {Array.isArray(options?.categories) ? (
+                    renderCategoryOptions(options.categories)
+                  ) : (
+                    <SelectItem value="" disabled>
+                      {options?.categories ? '分类数据格式错误' : '暂无分类数据'}
+                    </SelectItem>
+                  )}
                 </SelectContent>
               </Select>
               <Select value={filterType} onValueChange={v => setFilterType(v as any)}>
@@ -779,7 +1018,7 @@ const QuestionBankManager: React.FC = () => {
               <div className="text-center py-12">
                 <p className="text-gray-500 text-lg mb-4">
                   {selectedCategory !== 'all'
-                    ? `${options?.categories?.[selectedCategory] || selectedCategory}题目分类暂无题目`
+                    ? `${getCategoryNameById(options?.categories, selectedCategory) || selectedCategory}题目分类暂无题目`
                     : '题库中暂无题目'}
                 </p>
                 <Button onClick={() => setIsDialogOpen(true)}>添加第一道题目</Button>
@@ -807,7 +1046,7 @@ const QuestionBankManager: React.FC = () => {
                           <div className="flex items-center space-x-3">
                             <span className={`px-2 py-1 text-xs rounded ${question.type === 'choice' ? 'bg-blue-100 text-blue-800' : question.type === 'multi' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}`}>{question.type === 'choice' ? '选择题' : question.type === 'multi' ? '多选题' : '判断题'}</span>
                             <span className="px-2 py-1 text-xs bg-gray-100 text-gray-800 rounded">
-                              {options?.categories?.[question.category] || question.category}
+                              {getCategoryNameById(options?.categories, question.category) || question.category}
                             </span>
                             <span className="px-2 py-1 text-xs bg-purple-100 text-purple-800 rounded">{question.score}分</span>
                             <span className={`px-2 py-1 text-xs rounded ${getDifficultyColor(question.difficulty)}`}>{getDifficultyText(question.difficulty)}</span>
@@ -943,9 +1182,13 @@ const QuestionBankManager: React.FC = () => {
                       >
                         <SelectTrigger><SelectValue placeholder="选择题目分类" /></SelectTrigger>
                         <SelectContent>
-                          {options?.categories && Object.entries(options.categories).map(([key, value]) => (
-                            <SelectItem key={key} value={key}>{value}</SelectItem>
-                          ))}
+                          {Array.isArray(options?.categories) ? (
+                            renderCategoryOptions(options.categories)
+                          ) : (
+                            <SelectItem value="" disabled>
+                              {options?.categories ? '分类数据格式错误' : '暂无分类数据'}
+                            </SelectItem>
+                          )}
                         </SelectContent>
                       </Select>
                     </div>
@@ -1091,6 +1334,34 @@ const QuestionBankManager: React.FC = () => {
               <Input value={editCategoryForm.name} onChange={e => setEditCategoryForm(f => ({ ...f, name: e.target.value }))} />
             </div>
             <div>
+              <Label>父级分类</Label>
+              <Select 
+                value={editCategoryForm.parentId} 
+                onValueChange={value => setEditCategoryForm(f => ({ ...f, parentId: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="选择父级分类（可选）" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">无（顶级分类）</SelectItem>
+                  {getAllCategoryOptions(categories).map(option => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>排序顺序</Label>
+              <Input 
+                type="number" 
+                value={editCategoryForm.sortOrder} 
+                onChange={e => setEditCategoryForm(f => ({ ...f, sortOrder: parseInt(e.target.value) || 0 }))}
+                min="0"
+              />
+            </div>
+            <div>
               <Label>题目分类描述</Label>
               <Textarea value={editCategoryForm.description} onChange={e => setEditCategoryForm(f => ({ ...f, description: e.target.value }))} />
             </div>
@@ -1110,6 +1381,34 @@ const QuestionBankManager: React.FC = () => {
               <Input value={addCategoryForm.name} onChange={e => setAddCategoryForm(f => ({ ...f, name: e.target.value }))} />
             </div>
             <div>
+              <Label>父级分类</Label>
+              <Select 
+                value={addCategoryForm.parentId} 
+                onValueChange={value => setAddCategoryForm(f => ({ ...f, parentId: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="选择父级分类（可选）" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">无（顶级分类）</SelectItem>
+                  {getAllCategoryOptions(categories).map(option => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>排序顺序</Label>
+              <Input 
+                type="number" 
+                value={addCategoryForm.sortOrder} 
+                onChange={e => setAddCategoryForm(f => ({ ...f, sortOrder: parseInt(e.target.value) || 0 }))}
+                min="0"
+              />
+            </div>
+            <div>
               <Label>题目分类描述</Label>
               <Textarea value={addCategoryForm.description} onChange={e => setAddCategoryForm(f => ({ ...f, description: e.target.value }))} />
             </div>
@@ -1118,40 +1417,46 @@ const QuestionBankManager: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={deleteDialog.open} onOpenChange={open => setDeleteDialog(d => ({ ...d, open }))}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>确认删除</DialogTitle>
-          </DialogHeader>
-          <div className="py-4 text-center text-lg">
-            {deleteDialog.type === 'single'
-              ? '确定要删除这道题目吗？'
-              : `确定要批量删除选中的${selectedQuestions.length}道题目吗？`}
-          </div>
-          <div className="flex justify-end space-x-2">
-            <Button variant="outline" onClick={() => setDeleteDialog(d => ({ ...d, open: false }))}>取消</Button>
-            <Button variant="destructive" onClick={async () => {
-              if (deleteDialog.type === 'single' && deleteDialog.id) {
-                await request('/admin/questions/delete', {
-                  method: 'POST',
-                  body: JSON.stringify({ id: deleteDialog.id })
-                });
-                toast({ title: '题目已删除' });
-                fetchQuestions(questionPage);
-              } else if (deleteDialog.type === 'batch') {
-                await request('/admin/questions/batchDelete', {
-                  method: 'POST',
-                  body: JSON.stringify({ questionIds: selectedQuestions })
-                });
-                setSelectedQuestions([]);
-                toast({ title: '批量删除成功' });
-                fetchQuestions(questionPage);
-              }
-              setDeleteDialog(d => ({ ...d, open: false }));
-            }}>确认删除</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* 删除确认对话框 */}
+      <AlertDialog open={deleteDialog.open} onOpenChange={open => setDeleteDialog(d => ({ ...d, open }))}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteDialog.type === 'single'
+                ? '确定要删除这道题目吗？'
+                : `确定要批量删除选中的${selectedQuestions.length}道题目吗？`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={async () => {
+                if (deleteDialog.type === 'single' && deleteDialog.id) {
+                  await request('/admin/questions/delete', {
+                    method: 'POST',
+                    body: JSON.stringify({ id: deleteDialog.id })
+                  });
+                  toast({ title: '题目已删除' });
+                  fetchQuestions(questionPage);
+                } else if (deleteDialog.type === 'batch') {
+                  await request('/admin/questions/batchDelete', {
+                    method: 'POST',
+                    body: JSON.stringify({ questionIds: selectedQuestions })
+                  });
+                  setSelectedQuestions([]);
+                  toast({ title: '批量删除成功' });
+                  fetchQuestions(questionPage);
+                }
+                setDeleteDialog(d => ({ ...d, open: false }));
+              }}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

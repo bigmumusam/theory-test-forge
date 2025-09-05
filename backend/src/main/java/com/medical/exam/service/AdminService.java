@@ -7,6 +7,7 @@ import cn.hutool.poi.excel.ExcelUtil;
 import com.medical.exam.common.exception.CustomException;
 import com.medical.exam.dto.*;
 import com.medical.exam.entity.*;
+import com.medical.exam.entity.ExamForceRetake;
 import com.medical.exam.vo.*;
 import com.medical.exam.mapper.*;
 import com.medical.exam.security.JwtAccessContext;
@@ -24,7 +25,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import jakarta.servlet.http.HttpServletResponse;
+import cn.hutool.poi.excel.ExcelWriter;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.text.SimpleDateFormat;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -37,6 +43,7 @@ import static com.medical.exam.entity.table.ExamPaperTableDef.EXAM_PAPER;
 import static com.medical.exam.entity.table.ExamRecordTableDef.EXAM_RECORD;
 import static com.medical.exam.entity.table.ExamQuestionTableDef.EXAM_QUESTION;
 import static com.medical.exam.entity.table.ExamPaperQuestionTableDef.EXAM_PAPER_QUESTION;
+import static com.medical.exam.entity.table.ExamForceRetakeTableDef.EXAM_FORCE_RETAKE;
 import static com.medical.exam.entity.table.SysDepartmentTableDef.SYS_DEPARTMENT;
 import static com.medical.exam.entity.table.SysLogTableDef.SYS_LOG;
 import static com.medical.exam.entity.table.SysRoleTableDef.SYS_ROLE;
@@ -63,6 +70,8 @@ public class AdminService {
 
     @Resource
     private ExamPaperQuestionMapper examPaperQuestionMapper;
+    @Resource
+    private ExamForceRetakeMapper examForceRetakeMapper;
 
     @Resource
     private ExamRecordMapper examRecordMapper;
@@ -98,17 +107,191 @@ public class AdminService {
     }
 
     public Page<ExamResultVo> getExamResults(ExamResultQueryDTO request) {
-        // 模拟分页数据
-        return examRecordMapper.paginateAs(request.getPageNumber(),request.getPageSize(),
-                QueryWrapper.create()
-                        .select(EXAM_RECORD.RECORD_ID,SYS_USER.USER_NAME,SYS_USER.DEPARTMENT.as("categoryName"),SYS_USER.ID_NUMBER,EXAM_RECORD.EXAM_NAME
-                                ,EXAM_RECORD.END_TIME.as("examDate"),EXAM_RECORD.DURATION,EXAM_RECORD.SCORE,EXAM_RECORD.STATUS,EXAM_RECORD.RETAKE)
-                        .leftJoin(SYS_USER).on(SYS_USER.USER_ID.eq(EXAM_RECORD.USER_ID))
-                        .leftJoin(EXAM_PAPER).on(EXAM_PAPER.PAPER_ID.eq(EXAM_RECORD.PAPER_ID))
-                        .where(SYS_USER.USER_NAME.like(request.getKeyword()).or(SYS_USER.ID_NUMBER.like(request.getKeyword())))
-                        .and(EXAM_PAPER.CATEGORY_ID.eq(request.getCategory()))
-                        .and(EXAM_RECORD.STATUS.eq(request.getStatus())),
+        // 如果是不及格筛选，需要特殊处理以避免重复安排重考
+        if ("fail".equals(request.getPassStatus())) {
+            return getLatestFailedExamResults(request);
+        }
+        
+        QueryWrapper queryWrapper = QueryWrapper.create()
+                .select(EXAM_RECORD.RECORD_ID,SYS_USER.USER_NAME,SYS_USER.DEPARTMENT.as("categoryName"),SYS_USER.USER_CATEGORY,SYS_USER.ID_NUMBER,EXAM_RECORD.EXAM_NAME
+                        ,EXAM_RECORD.END_TIME.as("examDate"),EXAM_RECORD.DURATION,EXAM_RECORD.SCORE,EXAM_RECORD.TOTAL_SCORE,EXAM_RECORD.STATUS,EXAM_RECORD.RETAKE,EXAM_RECORD.PASS_SCORE)
+                .leftJoin(SYS_USER).on(SYS_USER.USER_ID.eq(EXAM_RECORD.USER_ID))
+                .leftJoin(EXAM_PAPER).on(EXAM_PAPER.PAPER_ID.eq(EXAM_RECORD.PAPER_ID))
+                .leftJoin(EXAM_CONFIG).on(EXAM_CONFIG.CONFIG_ID.eq(EXAM_PAPER.CONFIG_ID))
+                .where(SYS_USER.USER_NAME.like(request.getKeyword()).or(SYS_USER.ID_NUMBER.like(request.getKeyword())))
+                .and(EXAM_PAPER.CATEGORY_ID.eq(request.getCategory()))
+                .and(EXAM_RECORD.STATUS.eq(request.getStatus()));
+        
+        // 添加及格筛选
+        if ("pass".equals(request.getPassStatus())) {
+            queryWrapper.and(EXAM_RECORD.SCORE.ge(EXAM_RECORD.PASS_SCORE));
+        }
+        
+        // 添加重考筛选
+        if ("retake".equals(request.getRetakeStatus())) {
+            queryWrapper.and(EXAM_RECORD.RETAKE.eq(1));
+        } else if ("normal".equals(request.getRetakeStatus())) {
+            queryWrapper.and(EXAM_RECORD.RETAKE.eq(0));
+        }
+        
+        // 添加考试名称筛选
+        if (request.getExamName() != null && !request.getExamName().trim().isEmpty()) {
+            queryWrapper.and(EXAM_RECORD.EXAM_NAME.like(request.getExamName()));
+        }
+        
+        Page<ExamResultVo> page = examRecordMapper.paginateAs(request.getPageNumber(),request.getPageSize(),
+                queryWrapper.orderBy(EXAM_RECORD.END_TIME.desc()),
                 ExamResultVo.class);
+        
+        // 转换重考字段显示
+        for (ExamResultVo result : page.getRecords()) {
+            if (result.getRetake() != null) {
+                result.setRetake(result.getRetake().equals("1") ? "是" : "否");
+            }
+        }
+        
+        return page;
+    }
+    
+    /**
+     * 获取每个用户在每个考试中的最新记录中不及格的用户
+     * 按用户+考试名称分组，避免重复安排已及格用户的重考
+     */
+    private Page<ExamResultVo> getLatestFailedExamResults(ExamResultQueryDTO request) {
+        try {
+        // 构建基础查询条件
+        StringBuilder whereClause = new StringBuilder();
+        List<Object> params = new ArrayList<>();
+        
+        if (request.getStatus() != null && !request.getStatus().trim().isEmpty()) {
+            whereClause.append(" er.status = ?");
+            params.add(request.getStatus());
+        } else {
+            whereClause.append(" 1=1 "); // 没有状态条件时，防止SQL语法错误
+        }
+        
+        // 只有当keyword不为空时才添加keyword条件
+        if (request.getKeyword() != null && !request.getKeyword().trim().isEmpty()) {
+            whereClause.append(" AND (su.user_name LIKE ? OR su.id_number LIKE ?)");
+            params.add("%" + request.getKeyword() + "%");
+            params.add("%" + request.getKeyword() + "%");
+        }
+        
+        // 添加分类筛选
+        if (request.getCategory() != null && !request.getCategory().trim().isEmpty()) {
+            whereClause.append(" AND ep.category_id = ?");
+            params.add(request.getCategory());
+        }
+        
+        // 添加重考筛选
+        if ("retake".equals(request.getRetakeStatus())) {
+            whereClause.append(" AND er.retake = 1");
+        } else if ("normal".equals(request.getRetakeStatus())) {
+            whereClause.append(" AND er.retake = 0");
+        }
+        
+        // 添加考试名称筛选
+        if (request.getExamName() != null && !request.getExamName().trim().isEmpty()) {
+            whereClause.append(" AND er.exam_name LIKE ?");
+            params.add("%" + request.getExamName() + "%");
+        }
+        
+        // 1. 先查询总数（优化：只查询count，不查询具体数据）
+        String countSql = """
+            SELECT COUNT(1)
+            FROM exam_record er
+            LEFT JOIN sys_user su ON su.user_id = er.user_id
+            LEFT JOIN exam_paper ep ON ep.paper_id = er.paper_id
+            WHERE er.record_id IN (
+                SELECT er2.record_id
+                FROM exam_record er2
+                WHERE er2.user_id = er.user_id
+                  AND er2.exam_name = er.exam_name
+                  AND er2.status = 'completed'
+                  AND er2.end_time = (
+                      SELECT MAX(er3.end_time)
+                      FROM exam_record er3
+                      WHERE er3.user_id = er2.user_id
+                        AND er3.exam_name = er2.exam_name
+                        AND er3.status = 'completed'
+                  )
+                  AND er2.score < er2.pass_score
+            )
+            AND """ + whereClause;
+        
+        // 执行count查询
+        Row countRow = Db.selectOneBySql(countSql, params.toArray());
+        Long totalCount = countRow != null ? countRow.getLong("COUNT(1)") : 0L;
+        
+        // 2. 查询分页数据（使用LIMIT和OFFSET进行数据库级分页）
+        String dataSql = """
+            SELECT er.record_id, su.user_name, su.department as categoryName, su.user_category, su.id_number, 
+                   er.exam_name, er.end_time as examDate, er.duration, er.score, er.total_score, 
+                   er.status, er.retake, er.pass_score
+            FROM exam_record er
+            LEFT JOIN sys_user su ON su.user_id = er.user_id
+            LEFT JOIN exam_paper ep ON ep.paper_id = er.paper_id
+            LEFT JOIN exam_config ec ON ec.config_id = ep.config_id
+            WHERE er.record_id IN (
+                SELECT er2.record_id
+                FROM exam_record er2
+                WHERE er2.user_id = er.user_id
+                  AND er2.exam_name = er.exam_name
+                  AND er2.status = 'completed'
+                  AND er2.end_time = (
+                      SELECT MAX(er3.end_time)
+                      FROM exam_record er3
+                      WHERE er3.user_id = er2.user_id
+                        AND er3.exam_name = er2.exam_name
+                        AND er3.status = 'completed'
+                  )
+                  AND er2.score < er2.pass_score
+            )
+            AND """ + whereClause + """
+            ORDER BY er.end_time DESC
+            LIMIT ? OFFSET ?
+            """;
+        
+        // 添加分页参数
+        params.add(request.getPageSize());
+        params.add((request.getPageNumber() - 1) * request.getPageSize());
+        
+        // 执行分页查询
+        List<Row> rows = Db.selectListBySql(dataSql, params.toArray());
+        List<ExamResultVo> results = rows.stream()
+                .map(row -> RowUtil.toEntity(row, ExamResultVo.class))
+                .collect(Collectors.toList());
+        
+        // 转换重考字段显示
+        for (ExamResultVo result : results) {
+            if (result.getRetake() != null) {
+                result.setRetake(result.getRetake().equals("1") ? "是" : "否");
+            }
+        }
+        
+        // 创建分页对象
+        Page<ExamResultVo> page = new Page<>();
+        page.setRecords(results);
+        page.setPageNumber(request.getPageNumber());
+        page.setPageSize(request.getPageSize());
+        page.setTotalRow(totalCount.intValue());
+        page.setTotalPage((int) Math.ceil((double) totalCount / request.getPageSize()));
+        
+        return page;
+        } catch (Exception e) {
+            // 记录错误日志
+            System.err.println("查询不及格考试结果失败: " + e.getMessage());
+            e.printStackTrace();
+            
+            // 返回空的分页结果
+            Page<ExamResultVo> emptyPage = new Page<>();
+            emptyPage.setRecords(new ArrayList<>());
+            emptyPage.setPageNumber(request.getPageNumber());
+            emptyPage.setPageSize(request.getPageSize());
+            emptyPage.setTotalRow(0);
+            emptyPage.setTotalPage(0);
+            return emptyPage;
+        }
     }
 
     public  List<ExamDetailVo> getExamResultDetail(String recordId) {
@@ -120,15 +303,36 @@ public class AdminService {
                .where(EXAM_ANSWER.RECORD_ID.eq(recordId)),ExamDetailVo.class);
     }
 
+    @Transactional(rollbackFor = Exception.class)
     public void batchArrangeRetakeExam(Map<String, Object> request) {
         CustomToken customToken = JwtAccessContext.getLoginInfo();
         List<String> recordIds = (List<String>) request.get("recordIds");
-        recordIds.forEach(recordId -> {
-            examRecordMapper.update(ExamRecord.builder()
-                    .recordId(recordId)
-                    .retake(1)
-                    .build());
-        });
+        
+        // 验证所有记录是否存在且状态正确
+        for (String recordId : recordIds) {
+            ExamRecord record = examRecordMapper.selectOneByQuery(
+                QueryWrapper.create()
+                    .where(EXAM_RECORD.RECORD_ID.eq(recordId))
+                    .and(EXAM_RECORD.STATUS.eq("completed"))
+            );
+            
+            if (record == null) {
+                throw new RuntimeException("考试记录不存在或状态不正确: " + recordId);
+            }
+        }
+        
+        // 为每个记录设置强制重考标识
+        for (String recordId : recordIds) {
+            ExamRecord originalRecord = examRecordMapper.selectOneByQuery(
+                QueryWrapper.create()
+                    .where(EXAM_RECORD.RECORD_ID.eq(recordId))
+            );
+            
+            // 设置强制重考标识
+            setForceRetake(originalRecord.getUserId(), originalRecord.getPaperId());
+        }
+        
+        log.info("批量重考安排成功，记录ID: {}", recordIds);
     }
 
     // 题目管理
@@ -141,7 +345,6 @@ public class AdminService {
             .correctAnswer(request.getCorrectAnswer())
             .categoryId(request.getCategoryId())
             .difficulty(request.getDifficulty())
-            .score(request.getScore())
             .status("1")
             .remark(request.getRemark())
             .createBy(customToken.getUserName())
@@ -158,7 +361,6 @@ public class AdminService {
             .correctAnswer(request.getCorrectAnswer())
             .categoryId(request.getCategoryId())
             .difficulty(request.getDifficulty())
-            .score(request.getScore())
             .status(request.getStatus())
             .remark(request.getRemark())
             .updateBy(customToken.getUserName())
@@ -174,8 +376,6 @@ public class AdminService {
             .where( EXAM_QUESTION.CATEGORY_ID.eq(request.getCategoryId()))
             .and(EXAM_QUESTION.QUESTION_TYPE.eq(request.getQuestionType()))
             .and(EXAM_QUESTION.DIFFICULTY.eq(request.getDifficulty()))
-            .and(EXAM_QUESTION.SCORE.ge(request.getScoreMin()))
-            .and(EXAM_QUESTION.SCORE.le(request.getScoreMax()))
             .and(EXAM_QUESTION.QUESTION_CONTENT.like(request.getKeyword()));
         return examQuestionMapper.paginate(request.getPageNumber(), request.getPageSize(), queryWrapper);
     }
@@ -219,11 +419,10 @@ public class AdminService {
                         .correctAnswer(correctAnswer)
                         .categoryId(examCategoryMapper.selectOneByQuery(QueryWrapper.create()
                                 .where(EXAM_CATEGORY.CATEGORY_NAME.eq(categoryName))).getCategoryId())
-                        .score("多选题".equals(questionType) ? 4 : 2)
                         .difficulty("easy")
                         .status("1")
                         .createBy(customToken.getUserName())
-                        .score(1).build());
+                        .build());
             }
             examQuestionMapper.insertBatch(examQuestions);
         }catch (Exception e){
@@ -253,12 +452,17 @@ public class AdminService {
     // 题目分类/分类管理
     public void addCategory(CategoryDTO request) {
         CustomToken customToken = JwtAccessContext.getLoginInfo();
-        examCategoryMapper.insert(ExamCategory.builder()
-                        .categoryName(request.getCategoryName())
-                        .remark(request.getRemark())
-                        .status("1")
-                        .createBy(customToken.getUserName())
-                .build());
+        ExamCategory category = ExamCategory.builder()
+                .categoryName(request.getCategoryName())
+                .categoryCode(request.getCategoryCode())
+                .parentId(request.getParentId())
+                .level(request.getLevel() != null ? request.getLevel() : 1)
+                .sortOrder(request.getSortOrder() != null ? request.getSortOrder() : 0)
+                .remark(request.getRemark())
+                .status("1")
+                .createBy(customToken.getUserName())
+                .build();
+        examCategoryMapper.insert(category);
     }
 
     public void updateCategory(CategoryDTO request) {
@@ -267,21 +471,232 @@ public class AdminService {
                 ExamCategory.builder()
                         .categoryId(request.getCategoryId())
                         .categoryName(request.getCategoryName())
+                        .categoryCode(request.getCategoryCode())
+                        .parentId(request.getParentId())
+                        .level(request.getLevel())
+                        .sortOrder(request.getSortOrder())
                         .remark(request.getRemark())
                         .updateBy(customToken.getUserName())
                         .build()
         );
     }
 
+    public List<ExamCategoryVo> getCategoriesTree() {
+        // 获取所有分类
+        List<ExamCategory> allCategories = examCategoryMapper.selectListByQuery(
+                QueryWrapper.create()
+                        .where(EXAM_CATEGORY.STATUS.eq("1"))
+                        .orderBy(EXAM_CATEGORY.LEVEL.asc(), EXAM_CATEGORY.SORT_ORDER.asc(), EXAM_CATEGORY.CATEGORY_NAME.asc())
+        );
+
+        // 构建树形结构
+        List<ExamCategoryVo> tree = buildCategoryTree(allCategories);
+        
+        // 对树形结构进行排序
+        sortCategoryVoTree(tree);
+        
+        return tree;
+    }
+
+    private void sortCategoryVoTree(List<ExamCategoryVo> categories) {
+        if (categories == null || categories.isEmpty()) {
+            return;
+        }
+        
+        // 对当前层级进行排序
+        categories.sort((a, b) -> {
+            if (a.getSortOrder() != null && b.getSortOrder() != null) {
+                return a.getSortOrder().compareTo(b.getSortOrder());
+            }
+            return a.getCategoryName().compareTo(b.getCategoryName());
+        });
+        
+        // 递归对子分类进行排序
+        for (ExamCategoryVo category : categories) {
+            if (category.getChildren() != null && !category.getChildren().isEmpty()) {
+                sortCategoryVoTree(category.getChildren());
+            }
+        }
+    }
+
     public Page<ExamCategoryVo> getCategories(CategoryQueryDTO categoryQueryDTO) {
         return examCategoryMapper.paginateAs(categoryQueryDTO.getPageNumber(),categoryQueryDTO.getPageSize(),
                 QueryWrapper.create()
-                        .select(EXAM_CATEGORY.CATEGORY_ID,EXAM_CATEGORY.CATEGORY_NAME,EXAM_CATEGORY.REMARK,count(EXAM_QUESTION.CATEGORY_ID).as("questionCount"))
+                        .select(EXAM_CATEGORY.CATEGORY_ID,EXAM_CATEGORY.CATEGORY_NAME,EXAM_CATEGORY.CATEGORY_CODE,EXAM_CATEGORY.PARENT_ID,EXAM_CATEGORY.LEVEL,EXAM_CATEGORY.SORT_ORDER,EXAM_CATEGORY.REMARK,count(EXAM_QUESTION.CATEGORY_ID).as("questionCount"))
                         .leftJoin(EXAM_QUESTION).on(EXAM_CATEGORY.CATEGORY_ID.eq(EXAM_QUESTION.CATEGORY_ID))
                         .where(EXAM_CATEGORY.STATUS.eq("1"))
-                        .groupBy(EXAM_CATEGORY.CATEGORY_ID,EXAM_CATEGORY.CATEGORY_NAME,EXAM_CATEGORY.REMARK)
-                        .orderBy(EXAM_CATEGORY.CATEGORY_ID.asc()),ExamCategoryVo.class);
+                        .groupBy(EXAM_CATEGORY.CATEGORY_ID,EXAM_CATEGORY.CATEGORY_NAME,EXAM_CATEGORY.CATEGORY_CODE,EXAM_CATEGORY.PARENT_ID,EXAM_CATEGORY.LEVEL,EXAM_CATEGORY.SORT_ORDER,EXAM_CATEGORY.REMARK)
+                        .orderBy(EXAM_CATEGORY.LEVEL.asc(), EXAM_CATEGORY.SORT_ORDER.asc()),ExamCategoryVo.class);
+    }
 
+    private List<ExamCategoryVo> buildCategoryTree(List<ExamCategory> categories) {
+        Map<String, ExamCategoryVo> categoryMap = new HashMap<>();
+        List<ExamCategoryVo> rootCategories = new ArrayList<>();
+
+        // 转换为VO对象并获取题目数量
+        for (ExamCategory category : categories) {
+            ExamCategoryVo vo = new ExamCategoryVo();
+            vo.setCategoryId(category.getCategoryId());
+            vo.setCategoryName(category.getCategoryName());
+            vo.setCategoryCode(category.getCategoryCode());
+            vo.setParentId(category.getParentId());
+            vo.setLevel(category.getLevel());
+            vo.setSortOrder(category.getSortOrder());
+            vo.setRemark(category.getRemark());
+            vo.setChildren(new ArrayList<>());
+            
+            // 获取该分类的题目数量
+            Long questionCount = examQuestionMapper.selectCountByQuery(
+                    QueryWrapper.create()
+                            .where(EXAM_QUESTION.CATEGORY_ID.eq(category.getCategoryId()))
+                            .and(EXAM_QUESTION.STATUS.eq("1"))
+            );
+            vo.setQuestionCount(questionCount);
+            
+            categoryMap.put(category.getCategoryId(), vo);
+        }
+
+        // 构建树形结构
+        for (ExamCategoryVo vo : categoryMap.values()) {
+            if (vo.getParentId() == null || vo.getParentId().isEmpty()) {
+                rootCategories.add(vo);
+            } else {
+                ExamCategoryVo parent = categoryMap.get(vo.getParentId());
+                if (parent != null) {
+                    parent.getChildren().add(vo);
+                }
+            }
+        }
+
+        // 递归计算每个分类的总题目数量（包括子分类）
+        calculateTotalQuestionCountForVo(rootCategories);
+
+        return rootCategories;
+    }
+
+    /**
+     * 递归计算每个分类的总题目数量（包括子分类的题目数量）- ExamCategoryVo版本
+     */
+    private void calculateTotalQuestionCountForVo(List<ExamCategoryVo> categories) {
+        if (categories == null || categories.isEmpty()) {
+            return;
+        }
+        
+        for (ExamCategoryVo category : categories) {
+            // 递归计算子分类的总题目数量
+            if (category.getChildren() != null && !category.getChildren().isEmpty()) {
+                calculateTotalQuestionCountForVo(category.getChildren());
+                
+                // 计算子分类的总题目数量
+                Long childrenTotalCount = category.getChildren().stream()
+                        .mapToLong(child -> child.getQuestionCount() != null ? child.getQuestionCount() : 0)
+                        .sum();
+                
+                // 当前分类的总题目数量 = 自身题目数量 + 子分类总题目数量
+                Long selfCount = category.getQuestionCount() != null ? category.getQuestionCount() : 0;
+                category.setQuestionCount(selfCount + childrenTotalCount);
+            }
+        }
+    }
+
+    private List<CategoryCount> buildCategoryCountTree() {
+        // 获取所有分类，按层级和排序顺序排序
+        List<ExamCategory> allCategories = examCategoryMapper.selectListByQuery(
+                QueryWrapper.create()
+                        .where(EXAM_CATEGORY.STATUS.eq("1"))
+                        .orderBy(EXAM_CATEGORY.LEVEL.asc(), EXAM_CATEGORY.SORT_ORDER.asc(), EXAM_CATEGORY.CATEGORY_NAME.asc())
+        );
+
+        Map<String, CategoryCount> categoryMap = new HashMap<>();
+        List<CategoryCount> rootCategories = new ArrayList<>();
+
+        // 转换为CategoryCount对象并获取题目数量
+        for (ExamCategory category : allCategories) {
+            CategoryCount categoryCount = new CategoryCount();
+            categoryCount.setCategoryId(category.getCategoryId());
+            categoryCount.setCategoryName(category.getCategoryName());
+            categoryCount.setCategoryCode(category.getCategoryCode());
+            categoryCount.setParentId(category.getParentId());
+            categoryCount.setLevel(category.getLevel());
+            categoryCount.setSortOrder(category.getSortOrder());
+            categoryCount.setChildren(new ArrayList<>());
+            
+            // 获取该分类的题目数量
+            Long questionCount = examQuestionMapper.selectCountByQuery(
+                    QueryWrapper.create()
+                            .where(EXAM_QUESTION.CATEGORY_ID.eq(category.getCategoryId()))
+                            .and(EXAM_QUESTION.STATUS.eq("1"))
+            );
+            categoryCount.setQuestionCount(questionCount);
+            
+            categoryMap.put(category.getCategoryId(), categoryCount);
+        }
+
+        // 构建树形结构
+        for (CategoryCount categoryCount : categoryMap.values()) {
+            if (categoryCount.getParentId() == null || categoryCount.getParentId().isEmpty()) {
+                rootCategories.add(categoryCount);
+            } else {
+                CategoryCount parent = categoryMap.get(categoryCount.getParentId());
+                if (parent != null) {
+                    parent.getChildren().add(categoryCount);
+                }
+            }
+        }
+
+        // 对每个层级的子分类进行排序
+        sortCategoryTree(rootCategories);
+
+        // 递归计算每个分类的总题目数量（包括子分类）
+        calculateTotalQuestionCount(rootCategories);
+
+        return rootCategories;
+    }
+
+    /**
+     * 递归计算每个分类的总题目数量（包括子分类的题目数量）
+     */
+    private void calculateTotalQuestionCount(List<CategoryCount> categories) {
+        if (categories == null || categories.isEmpty()) {
+            return;
+        }
+        
+        for (CategoryCount category : categories) {
+            // 递归计算子分类的总题目数量
+            if (category.getChildren() != null && !category.getChildren().isEmpty()) {
+                calculateTotalQuestionCount(category.getChildren());
+                
+                // 计算子分类的总题目数量
+                Long childrenTotalCount = category.getChildren().stream()
+                        .mapToLong(child -> child.getQuestionCount() != null ? child.getQuestionCount() : 0)
+                        .sum();
+                
+                // 当前分类的总题目数量 = 自身题目数量 + 子分类总题目数量
+                Long selfCount = category.getQuestionCount() != null ? category.getQuestionCount() : 0;
+                category.setQuestionCount(selfCount + childrenTotalCount);
+            }
+        }
+    }
+
+    private void sortCategoryTree(List<CategoryCount> categories) {
+        if (categories == null || categories.isEmpty()) {
+            return;
+        }
+        
+        // 对当前层级进行排序
+        categories.sort((a, b) -> {
+            if (a.getSortOrder() != null && b.getSortOrder() != null) {
+                return a.getSortOrder().compareTo(b.getSortOrder());
+            }
+            return a.getCategoryName().compareTo(b.getCategoryName());
+        });
+        
+        // 递归对子分类进行排序
+        for (CategoryCount category : categories) {
+            if (category.getChildren() != null && !category.getChildren().isEmpty()) {
+                sortCategoryTree(category.getChildren());
+            }
+        }
     }
 
 
@@ -321,6 +736,17 @@ public class AdminService {
         examConfigMapper.update(examConfig);
     }
     public void deleteExamConfig(String id) {
+        // 检查该配置下是否有试卷
+        List<ExamPaper> papers = examPaperMapper.selectListByQuery(
+            QueryWrapper.create()
+                .where(EXAM_PAPER.CONFIG_ID.eq(id))
+                .and(EXAM_PAPER.STATUS.eq("1")) // 只检查启用状态的试卷
+        );
+        
+        if (!papers.isEmpty()) {
+            throw new RuntimeException("该考试配置下存在试卷，无法删除。请先删除相关试卷后再删除配置。");
+        }
+        
         examConfigMapper.deleteById(id);
     }
 
@@ -373,14 +799,16 @@ public class AdminService {
                 EXAM_PAPER.CREATE_TIME,
                 EXAM_PAPER.UPDATE_BY,
                 EXAM_PAPER.UPDATE_TIME,
-                EXAM_PAPER.REMARK
+                EXAM_PAPER.REMARK,
+                EXAM_CONFIG.USER_CATEGORY
             )
             .from(EXAM_PAPER)
-            .leftJoin(EXAM_CATEGORY).on(EXAM_PAPER.CATEGORY_ID.eq(EXAM_CATEGORY.CATEGORY_ID));
+            .leftJoin(EXAM_CATEGORY).on(EXAM_PAPER.CATEGORY_ID.eq(EXAM_CATEGORY.CATEGORY_ID))
+            .leftJoin(EXAM_CONFIG).on(EXAM_PAPER.CONFIG_ID.eq(EXAM_CONFIG.CONFIG_ID));
         
         // 试卷名称模糊查询
         if (examPaperQueryDTO.getPaperName() != null && !examPaperQueryDTO.getPaperName().trim().isEmpty()) {
-            queryWrapper.and(EXAM_PAPER.PAPER_NAME.like("%" + examPaperQueryDTO.getPaperName().trim() + "%"));
+            queryWrapper.and(EXAM_PAPER.PAPER_NAME.like(examPaperQueryDTO.getPaperName().trim()));
         }
         
         // 科室筛选
@@ -418,24 +846,130 @@ public class AdminService {
                 .build());
     }
 
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteExamPaper(String paperId) {
+        // 检查该试卷是否有考试记录
+        List<ExamRecord> records = examRecordMapper.selectListByQuery(
+            QueryWrapper.create()
+                .where(EXAM_RECORD.PAPER_ID.eq(paperId))
+        );
+        
+        if (!records.isEmpty()) {
+            throw new RuntimeException("该试卷已有考试记录，无法删除。");
+        }
+        
+        // 删除试卷相关的题目关联
+        examPaperQuestionMapper.deleteByQuery(
+            QueryWrapper.create()
+                .where(EXAM_PAPER_QUESTION.PAPER_ID.eq(paperId))
+        );
+        
+        // 删除试卷
+        examPaperMapper.deleteById(paperId);
+    }
+
     public List<ExamPaper> getAvailablePapers(AvailablePaperQueryDTO result) {
         CustomToken customToken = JwtAccessContext.getLoginInfo();
-        // 查出所有试卷
-        List<ExamPaper> papers = examPaperMapper.selectListByQuery(QueryWrapper.create().where(EXAM_PAPER.STATUS.eq("1")));
-        //查出所有参加试考试的记录
+        
+        // 获取当前用户的人员类别
+        SysUser currentUser = sysUserMapper.selectOneByQuery(QueryWrapper.create()
+                .where(SYS_USER.USER_ID.eq(customToken.getUserId())));
+        
+        if (currentUser == null) {
+            return new ArrayList<>();
+        }
+        
+        // 查出所有试卷，并根据人员类别进行过滤
+        List<ExamPaper> papers = examPaperMapper.selectListByQuery(QueryWrapper.create()
+                .select(EXAM_PAPER.ALL_COLUMNS, EXAM_CONFIG.USER_CATEGORY)
+                .from(EXAM_PAPER)
+                .leftJoin(EXAM_CONFIG).on(EXAM_PAPER.CONFIG_ID.eq(EXAM_CONFIG.CONFIG_ID))
+                .where(EXAM_PAPER.STATUS.eq("1"))
+                .and(EXAM_CONFIG.USER_CATEGORY.eq(currentUser.getUserCategory())));
+        
+        //查出所有参加考试的记录（包括重考记录）
         List<ExamRecord> records = examRecordMapper.selectListByQuery(QueryWrapper.create()
                 .where(EXAM_RECORD.USER_ID.eq(customToken.getUserId()))
-                .and(EXAM_RECORD.RETAKE.eq(0)));
+                .orderBy(EXAM_RECORD.END_TIME.desc()));
+
+        //查出该用户的强制重考配置
+        List<ExamForceRetake> forceRetakes = examForceRetakeMapper.selectListByQuery(QueryWrapper.create()
+                .where(EXAM_FORCE_RETAKE.USER_ID.eq(customToken.getUserId()))
+                .and(EXAM_FORCE_RETAKE.FORCE_RETAKE.eq(1)));
 
         papers.forEach(paper -> {
-            paper.setStatus("pending");
-           records.forEach(record -> {
-               if(paper.getPaperId().equals(record.getPaperId())){
-                   paper.setStatus(record.getStatus());
-               }
-           });
+            // 检查是否有强制重考配置
+            boolean hasForceRetake = forceRetakes.stream()
+                    .anyMatch(forceRetake -> paper.getPaperId().equals(forceRetake.getPaperId()));
+            
+            // 找到该试卷的最新考试记录
+            ExamRecord latestRecord = records.stream()
+                    .filter(record -> paper.getPaperId().equals(record.getPaperId()))
+                    .findFirst()
+                    .orElse(null);
+            
+            if (latestRecord == null) {
+                // 未考试的情况
+                if (hasForceRetake) {
+                    paper.setStatus("pending"); // 未考试 + 管理员安排重考 = 可以考试
+                } else {
+                    paper.setStatus("notStarted"); // 未考试 + 无重考安排 = 不能考试
+                }
+            } else {
+                // 已考试的情况
+                if ("in-progress".equals(latestRecord.getStatus())) {
+                    paper.setStatus("in-progress"); // 进行中
+                } else if ("completed".equals(latestRecord.getStatus())) {
+                    if (hasForceRetake) {
+                        paper.setStatus("pending"); // 已完成 + 管理员安排重考 = 可以重考
+                    } else {
+                        paper.setStatus("completed"); // 已完成 + 无重考安排 = 不能重考
+                    }
+                } else if ("timeout".equals(latestRecord.getStatus())) {
+                    if (hasForceRetake) {
+                        paper.setStatus("pending"); // 超时 + 管理员安排重考 = 可以重考
+                    } else {
+                        paper.setStatus("timeout"); // 超时 + 无重考安排 = 不能重考
+                    }
+                } else {
+                    if (hasForceRetake) {
+                        paper.setStatus("pending"); // 其他状态 + 管理员安排重考 = 可以重考
+                    } else {
+                        paper.setStatus("completed"); // 其他状态都视为已完成
+                    }
+                }
+            }
         });
         return papers;
+    }
+
+    /**
+     * 设置特定用户的试卷强制重考标识（完成后自动复位）
+     * @param userId 用户ID
+     * @param paperId 试卷ID
+     */
+    public void setForceRetake(String userId, String paperId) {
+        // 检查是否已存在配置
+        ExamForceRetake existing = examForceRetakeMapper.selectOneByQuery(
+            QueryWrapper.create()
+                .where(EXAM_FORCE_RETAKE.USER_ID.eq(userId))
+                .and(EXAM_FORCE_RETAKE.PAPER_ID.eq(paperId))
+        );
+        
+        if (existing != null) {
+            // 更新现有配置
+            existing.setForceRetake(1);
+            examForceRetakeMapper.update(existing);
+        } else {
+            // 创建新配置
+            ExamForceRetake forceRetake = ExamForceRetake.builder()
+                    .userId(userId)
+                    .paperId(paperId)
+                    .forceRetake(1)
+                    .createBy(JwtAccessContext.getLoginInfo().getUserName())
+                    .build();
+            examForceRetakeMapper.insert(forceRetake);
+        }
     }
 
     // 统计分析
@@ -451,18 +985,14 @@ public class AdminService {
                 .orderBy(SYS_LOG.CREATE_TIME.desc())
                 .limit(5));
 
-        List<CategoryCount>  categorySummary = examCategoryMapper.selectListByQueryAs(QueryWrapper.create()
-                .select(EXAM_CATEGORY.CATEGORY_NAME.as("categoryName"), count(EXAM_QUESTION.QUESTION_ID).as("questionCount"))
-                        .leftJoin(EXAM_QUESTION).on(EXAM_QUESTION.CATEGORY_ID.eq(EXAM_CATEGORY.CATEGORY_ID))
-//                .where(EXAM_QUESTION.STATUS.eq("1"))
-                .groupBy(EXAM_CATEGORY.CATEGORY_NAME)
-                .orderBy(count(EXAM_QUESTION.QUESTION_ID).desc()),CategoryCount.class);
+        // 获取层级结构的分类统计
+        List<CategoryCount> categorySummary = buildCategoryCountTree();
 
         return DashboardVo.builder()
                 .questionCount((int) examQuestionCount)
                 .examResultCountToday((int)examResultCountToday)
                 .categoryCount((int)categoryCount)
-                .avgExamScore(avgExamScore== null ? "0": avgExamScore.toString())
+                .avgExamScore(avgExamScore== null ? BigDecimal.ZERO : new BigDecimal(avgExamScore.toString()).setScale(2, RoundingMode.HALF_UP))
                 .sysLogs(sysLogs)
                 .categorySummary(categorySummary)
                 .build();
@@ -516,13 +1046,12 @@ public class AdminService {
 
         Map<String,String> departmentsMap = sysDepartments.stream().collect(Collectors.toMap(Object::toString,Object::toString));
 
-        List<ExamCategory> examCategories = examCategoryMapper.selectListByQuery(QueryWrapper.create().select(EXAM_CATEGORY.CATEGORY_ID,EXAM_CATEGORY.CATEGORY_NAME)
-                .where(EXAM_CATEGORY.STATUS.eq("1")));
-        Map<String,String> categoryMap = examCategories.stream().collect(Collectors.toMap(ExamCategory::getCategoryId,ExamCategory::getCategoryName));
+        // 获取分类树形结构
+        List<ExamCategoryVo> categoryTree = getCategoriesTree();
 
         return Options.builder()
                 .roles(roleMap)
-                .categories(categoryMap)
+                .categories(categoryTree)
                 .departments(departmentsMap)
                 .build();
     }
@@ -541,25 +1070,44 @@ public class AdminService {
     }
 
     public List<ExamQuestion> getQuestionsByPaperId(String paperId) {
-        // 1. 根据试卷ID查询试卷题目关联表中的所有题目ID
-        List<Object> questionIds = examPaperQuestionMapper.selectObjectListByQuery(
+        // 1. 根据试卷ID查询试卷题目关联表中的所有题目ID和分数
+        List<ExamPaperQuestion> paperQuestions = examPaperQuestionMapper.selectListByQuery(
             QueryWrapper.create()
-                .select(EXAM_PAPER_QUESTION.QUESTION_ID)
                 .where(EXAM_PAPER_QUESTION.PAPER_ID.eq(paperId))
+                .orderBy(EXAM_PAPER_QUESTION.QUESTION_ORDER.asc())
         );
         
-        if (questionIds == null || questionIds.isEmpty()) {
+        if (paperQuestions == null || paperQuestions.isEmpty()) {
             return new ArrayList<>();
         }
         
-        // 2. 根据题目ID查询完整的题目信息
+        // 2. 获取题目ID列表
+        List<String> questionIds = paperQuestions.stream()
+                .map(ExamPaperQuestion::getQuestionId)
+                .collect(Collectors.toList());
+        
+        // 3. 根据题目ID查询完整的题目信息
         List<ExamQuestion> questions = examQuestionMapper.selectListByQuery(
             QueryWrapper.create()
                 .where(EXAM_QUESTION.QUESTION_ID.in(questionIds))
                 .and(EXAM_QUESTION.STATUS.eq("1")) // 只查询有效的题目
         );
         
-        // 3. 随机打乱题目顺序
+        // 4. 为每个题目设置分数（从试卷题目关联表中获取）
+        Map<String, Integer> questionScoreMap = paperQuestions.stream()
+                .collect(Collectors.toMap(
+                    ExamPaperQuestion::getQuestionId,
+                    ExamPaperQuestion::getQuestionScore
+                ));
+        
+        questions.forEach(question -> {
+            Integer score = questionScoreMap.get(question.getQuestionId());
+            if (score != null) {
+                question.setScore(score);
+            }
+        });
+        
+        // 5. 随机打乱题目顺序
         Collections.shuffle(questions);
         
         return questions;
@@ -578,6 +1126,377 @@ public class AdminService {
             return "judgment";
         }
         return questionTypeName;
+    }
+
+    // 获取试卷考试情况统计
+    public PaperExamStatusDTO getPaperExamStatus(String paperId) {
+        // 1. 获取试卷信息
+        ExamPaper paper = examPaperMapper.selectOneByQuery(
+            QueryWrapper.create()
+                .where(EXAM_PAPER.PAPER_ID.eq(paperId))
+        );
+        
+        if (paper == null) {
+            throw new RuntimeException("试卷不存在");
+        }
+        
+        // 2. 获取试卷对应的人员类别
+        ExamConfig config = examConfigMapper.selectOneByQuery(
+            QueryWrapper.create()
+                .where(EXAM_CONFIG.CONFIG_ID.eq(paper.getConfigId()))
+        );
+        
+        if (config == null) {
+            throw new RuntimeException("考试配置不存在");
+        }
+        
+        // 3. 统计该人员类别下的总用户数
+        Long totalUsers = sysUserMapper.selectCountByQuery(
+            QueryWrapper.create()
+                .where(SYS_USER.USER_CATEGORY.eq(config.getUserCategory()))
+                .and(SYS_USER.STATUS.eq("1"))
+                .and(SYS_USER.ROLE.eq("student"))
+        );
+        
+        // 4. 统计已考试的用户数（去重）
+        List<Object> examedUserIds = examRecordMapper.selectObjectListByQuery(
+            QueryWrapper.create()
+                .select(EXAM_RECORD.USER_ID)
+                .from(EXAM_RECORD)
+                .leftJoin(SYS_USER).on(EXAM_RECORD.USER_ID.eq(SYS_USER.USER_ID))
+                .where(EXAM_RECORD.PAPER_ID.eq(paperId))
+                .and(SYS_USER.USER_CATEGORY.eq(config.getUserCategory()))
+                .and(EXAM_RECORD.STATUS.eq("completed"))
+                .groupBy(EXAM_RECORD.USER_ID)
+        );
+        Long examedUsers = (long) examedUserIds.size();
+        
+        // 5. 计算未考试用户数
+        Integer notExamedUsers = totalUsers.intValue() - examedUsers.intValue();
+        
+        // 6. 计算考试率
+        Double examRate = totalUsers > 0 ? (examedUsers.doubleValue() / totalUsers.doubleValue()) * 100 : 0.0;
+        
+        return PaperExamStatusDTO.builder()
+                .paperId(paperId)
+                .paperName(paper.getPaperName())
+                .userCategory(config.getUserCategory())
+                .totalUsers(totalUsers.intValue())
+                .examedUsers(examedUsers.intValue())
+                .notExamedUsers(notExamedUsers)
+                .examRate(Math.round(examRate * 100.0) / 100.0)
+                .build();
+    }
+    
+    // 获取试卷考试详细情况
+    public List<PaperExamDetailVo> getPaperExamDetail(String paperId) {
+        // 1. 获取试卷对应的人员类别
+        ExamConfig config = examConfigMapper.selectOneByQuery(
+            QueryWrapper.create()
+                .from(EXAM_CONFIG)
+                .leftJoin(EXAM_PAPER).on(EXAM_CONFIG.CONFIG_ID.eq(EXAM_PAPER.CONFIG_ID))
+                .where(EXAM_PAPER.PAPER_ID.eq(paperId))
+        );
+        
+        if (config == null) {
+            throw new RuntimeException("考试配置不存在");
+        }
+        
+        // 2. 获取该人员类别下的所有用户
+        List<SysUser> allUsers = sysUserMapper.selectListByQuery(
+            QueryWrapper.create()
+                .where(SYS_USER.USER_CATEGORY.eq(config.getUserCategory()))
+                .and(SYS_USER.STATUS.eq("1"))
+                .and(SYS_USER.ROLE.eq("student"))
+        );
+        
+        // 3. 获取已考试的用户记录，按用户ID和结束时间排序
+        List<ExamRecord> examRecords = examRecordMapper.selectListByQuery(
+            QueryWrapper.create()
+                .where(EXAM_RECORD.PAPER_ID.eq(paperId))
+                .and(EXAM_RECORD.STATUS.eq("completed"))
+                .orderBy(EXAM_RECORD.USER_ID.asc(), EXAM_RECORD.END_TIME.desc())
+        );
+        
+        // 4. 创建已考试用户的映射，如果有重复用户，取最新的考试记录
+        Map<String, ExamRecord> examedUserMap = examRecords.stream()
+                .collect(Collectors.toMap(
+                    ExamRecord::getUserId, 
+                    record -> record,
+                    (existing, replacement) -> {
+                        // 如果有重复的userId，保留最新的考试记录（按endTime排序）
+                        if (existing.getEndTime() != null && replacement.getEndTime() != null) {
+                            return existing.getEndTime().after(replacement.getEndTime()) ? existing : replacement;
+                        } else if (existing.getEndTime() != null) {
+                            return existing;
+                        } else {
+                            return replacement;
+                        }
+                    }
+                ));
+        
+        // 5. 构建结果列表
+        List<PaperExamDetailVo> result = new ArrayList<>();
+        
+        for (SysUser user : allUsers) {
+            PaperExamDetailVo detail = new PaperExamDetailVo();
+            detail.setUserId(user.getUserId());
+            detail.setUserName(user.getUserName());
+            detail.setIdNumber(user.getIdNumber());
+            detail.setDepartment(user.getDepartment());
+            
+            ExamRecord examRecord = examedUserMap.get(user.getUserId());
+            if (examRecord != null) {
+                // 已考试
+                detail.setExamStatus("已考试");
+                detail.setExamDate(examRecord.getEndTime() != null ? 
+                    new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(examRecord.getEndTime()) : "");
+                detail.setScore(examRecord.getScore());
+                detail.setStatus(examRecord.getStatus());
+            } else {
+                // 未考试
+                detail.setExamStatus("未考试");
+                detail.setExamDate("");
+                detail.setScore(null);
+                detail.setStatus("");
+            }
+            
+            result.add(detail);
+        }
+        
+        // 6. 按考试状态和姓名排序
+        result.sort((a, b) -> {
+            // 先按考试状态排序（未考试的在前）
+            int statusCompare = a.getExamStatus().compareTo(b.getExamStatus());
+            if (statusCompare != 0) {
+                return statusCompare;
+            }
+            // 再按姓名排序
+            return a.getUserName().compareTo(b.getUserName());
+        });
+        
+        return result;
+    }
+
+    /**
+     * 获取考试结果数据用于导出（不分页）
+     * @param request 查询条件
+     * @return 考试结果列表
+     */
+    private List<ExamResultVo> getExamResultsForExport(ExamResultQueryDTO request) {
+        // 如果是不及格筛选，需要特殊处理
+        if ("fail".equals(request.getPassStatus())) {
+            return getLatestFailedExamResultsForExport(request);
+        }
+        
+        QueryWrapper queryWrapper = QueryWrapper.create()
+                .select(EXAM_RECORD.RECORD_ID,SYS_USER.USER_NAME,SYS_USER.DEPARTMENT.as("categoryName"),SYS_USER.USER_CATEGORY,SYS_USER.ID_NUMBER,EXAM_RECORD.EXAM_NAME
+                        ,EXAM_RECORD.END_TIME.as("examDate"),EXAM_RECORD.DURATION,EXAM_RECORD.SCORE,EXAM_RECORD.TOTAL_SCORE,EXAM_RECORD.STATUS,EXAM_RECORD.RETAKE,EXAM_RECORD.PASS_SCORE)
+                .leftJoin(SYS_USER).on(SYS_USER.USER_ID.eq(EXAM_RECORD.USER_ID))
+                .leftJoin(EXAM_PAPER).on(EXAM_PAPER.PAPER_ID.eq(EXAM_RECORD.PAPER_ID))
+                .leftJoin(EXAM_CONFIG).on(EXAM_CONFIG.CONFIG_ID.eq(EXAM_PAPER.CONFIG_ID))
+                .where(EXAM_RECORD.STATUS.ne("in-progress")); // 导出时排除进行中的考试
+        
+        // 添加关键词筛选 - 导出时处理空值
+        if (request.getKeyword() != null && !request.getKeyword().trim().isEmpty()) {
+            queryWrapper.and(SYS_USER.USER_NAME.like(request.getKeyword()).or(SYS_USER.ID_NUMBER.like(request.getKeyword())));
+        }
+        
+        // 添加分类筛选 - 导出时处理"all"值
+        if (request.getCategory() != null && !request.getCategory().trim().isEmpty() && !"all".equals(request.getCategory())) {
+            queryWrapper.and(EXAM_PAPER.CATEGORY_ID.eq(request.getCategory()));
+        }
+        
+        // 添加状态筛选 - 导出时处理"all"值，但排除in-progress
+        if (request.getStatus() != null && !request.getStatus().trim().isEmpty() && !"all".equals(request.getStatus())) {
+            queryWrapper.and(EXAM_RECORD.STATUS.eq(request.getStatus()));
+        }
+        
+        // 添加及格筛选
+        if ("pass".equals(request.getPassStatus())) {
+            queryWrapper.and(EXAM_RECORD.SCORE.ge(EXAM_RECORD.PASS_SCORE));
+        }
+        
+        // 添加重考筛选
+        if ("retake".equals(request.getRetakeStatus())) {
+            queryWrapper.and(EXAM_RECORD.RETAKE.eq(1));
+        } else if ("normal".equals(request.getRetakeStatus())) {
+            queryWrapper.and(EXAM_RECORD.RETAKE.eq(0));
+        }
+        
+        // 添加考试名称筛选
+        if (request.getExamName() != null && !request.getExamName().trim().isEmpty()) {
+            queryWrapper.and(EXAM_RECORD.EXAM_NAME.like(request.getExamName()));
+        }
+        
+        // 查询所有数据（不分页）
+        List<ExamResultVo> results = examRecordMapper.selectListByQueryAs(
+                queryWrapper.orderBy(EXAM_RECORD.END_TIME.desc()),
+                ExamResultVo.class);
+        
+        // 转换重考字段显示
+        for (ExamResultVo result : results) {
+            if (result.getRetake() != null) {
+                result.setRetake(result.getRetake().equals("1") ? "是" : "否");
+            }
+        }
+        
+        return results;
+    }
+
+    /**
+     * 获取不及格考试结果数据用于导出（不分页）
+     * @param request 查询条件
+     * @return 考试结果列表
+     */
+    private List<ExamResultVo> getLatestFailedExamResultsForExport(ExamResultQueryDTO request) {
+        try {
+            // 构建基础查询条件
+            StringBuilder whereClause = new StringBuilder();
+            List<Object> params = new ArrayList<>();
+            
+            if (request.getStatus() != null && !request.getStatus().trim().isEmpty() && !"all".equals(request.getStatus())) {
+                whereClause.append(" er.status = ?");
+                params.add(request.getStatus());
+            } else {
+                whereClause.append(" 1=1 "); // 没有状态条件时，防止SQL语法错误
+            }
+            
+            // 只有当keyword不为空时才添加keyword条件
+            if (request.getKeyword() != null && !request.getKeyword().trim().isEmpty()) {
+                whereClause.append(" AND (su.user_name LIKE ? OR su.id_number LIKE ?)");
+                params.add("%" + request.getKeyword() + "%");
+                params.add("%" + request.getKeyword() + "%");
+            }
+            
+            // 添加分类筛选 - 导出时处理"all"值
+            if (request.getCategory() != null && !request.getCategory().trim().isEmpty() && !"all".equals(request.getCategory())) {
+                whereClause.append(" AND ep.category_id = ?");
+                params.add(request.getCategory());
+            }
+            
+            // 添加重考筛选
+            if ("retake".equals(request.getRetakeStatus())) {
+                whereClause.append(" AND er.retake = 1");
+            } else if ("normal".equals(request.getRetakeStatus())) {
+                whereClause.append(" AND er.retake = 0");
+            }
+            
+            // 添加考试名称筛选
+            if (request.getExamName() != null && !request.getExamName().trim().isEmpty()) {
+                whereClause.append(" AND er.exam_name LIKE ?");
+                params.add("%" + request.getExamName() + "%");
+            }
+            
+            // 构建完整查询SQL（不分页）
+            String dataSql = """
+                SELECT er.record_id, su.user_name, su.department as categoryName, su.user_category, su.id_number, er.exam_name, 
+                       er.end_time as examDate, er.duration, er.score, er.total_score, er.status, er.retake, er.pass_score
+                FROM exam_record er 
+                LEFT JOIN sys_user su ON su.user_id = er.user_id 
+                LEFT JOIN exam_paper ep ON ep.paper_id = er.paper_id 
+                LEFT JOIN exam_config ec ON ec.config_id = ep.config_id 
+                WHERE er.record_id IN ( 
+                    SELECT er2.record_id 
+                    FROM exam_record er2 
+                    WHERE er2.user_id = er.user_id 
+                    AND er2.exam_name = er.exam_name 
+                    AND er2.status = 'completed' 
+                    AND er2.end_time = ( 
+                        SELECT MAX(er3.end_time) 
+                        FROM exam_record er3 
+                        WHERE er3.user_id = er2.user_id 
+                        AND er3.exam_name = er2.exam_name 
+                        AND er3.status = 'completed' 
+                    ) 
+                    AND er2.score < er2.pass_score 
+                ) 
+                AND """ + whereClause + """
+                ORDER BY er.end_time DESC
+                """;
+            
+            // 执行查询
+            List<Row> rows = Db.selectListBySql(dataSql, params.toArray());
+            List<ExamResultVo> results = rows.stream()
+                    .map(row -> RowUtil.toEntity(row, ExamResultVo.class))
+                    .collect(Collectors.toList());
+            
+            // 转换重考字段显示
+            for (ExamResultVo result : results) {
+                if (result.getRetake() != null) {
+                    result.setRetake(result.getRetake().equals("1") ? "是" : "否");
+                }
+            }
+            
+            return results;
+        } catch (Exception e) {
+            log.error("查询不及格考试结果失败", e);
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * 导出考试结果到Excel
+     * @param request 查询条件
+     * @param response HTTP响应
+     */
+    public void exportExamResults(ExamResultQueryDTO request, HttpServletResponse response) {
+        ExcelWriter writer = null;
+        try {
+            // 获取完整数据 - 使用专门的导出查询方法
+            List<ExamResultVo> results = getExamResultsForExport(request);
+            
+            // 生成带时间戳的英文文件名
+            String timestamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(new java.util.Date());
+            String filename = "exam_results_" + timestamp + ".xlsx";
+            
+            // 设置响应头，确保Windows环境下的编码兼容性
+            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8");
+            response.setCharacterEncoding("UTF-8");
+            // Windows环境下使用URL编码处理中文文件名
+            String encodedFilename = java.net.URLEncoder.encode(filename, "UTF-8");
+            response.setHeader("Content-Disposition", "attachment;filename*=UTF-8''" + encodedFilename);
+            
+            // 创建ExcelWriter，指定为xlsx格式
+            writer = ExcelUtil.getWriter(true);
+            
+            // 设置表头
+            writer.addHeaderAlias("userName", "姓名");
+            writer.addHeaderAlias("idNumber", "身份证号");
+            writer.addHeaderAlias("examName", "考试名称");
+            writer.addHeaderAlias("categoryName", "题目分类");
+            writer.addHeaderAlias("userCategory", "人员类别");
+            writer.addHeaderAlias("score", "得分");
+            writer.addHeaderAlias("totalScore", "总分");
+            writer.addHeaderAlias("duration", "用时(分钟)");
+            writer.addHeaderAlias("examDate", "完成时间");
+            writer.addHeaderAlias("status", "状态");
+            writer.addHeaderAlias("retake", "重考");
+            
+            // 写入数据
+            writer.write(results, true);
+            
+            // 自适应列宽
+            writer.autoSizeColumnAll();
+            
+            // 将Excel文件写入响应流
+            writer.flush(response.getOutputStream());
+            
+            log.info("考试结果导出成功，共导出{}条记录", results.size());
+            
+        } catch (Exception e) {
+            log.error("导出考试结果失败", e);
+            throw new CustomException("导出考试结果失败: " + e.getMessage());
+        } finally {
+            // 确保资源被正确关闭
+            if (writer != null) {
+                try {
+                    writer.close();
+                } catch (Exception e) {
+                    log.error("关闭ExcelWriter失败", e);
+                }
+            }
+        }
     }
 
 

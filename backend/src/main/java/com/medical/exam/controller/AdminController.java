@@ -18,6 +18,11 @@ public class AdminController {
     @Resource
     private AdminService adminService;
 
+    @GetMapping("test")
+    public Result<?> test(){
+        return Result.success("Hello World");
+    }
+
     //获取下拉列表
     @PostMapping("/options")
     public Result<?> getOptions() {
@@ -94,6 +99,12 @@ public class AdminController {
         return Result.success(adminService.getCategories(categoryQueryDTO));
     }
 
+    //查询题目分类树形结构
+    @PostMapping("/categories/tree")
+    public Result<?> getCategoriesTree() {
+        return Result.success(adminService.getCategoriesTree());
+    }
+
     @PostMapping("/departments/add")
     public Result<?> addDepartment(@RequestBody DepartmentDTO request) {
         adminService.addDepartment(request);
@@ -156,9 +167,24 @@ public class AdminController {
     }
 
     @PostMapping("/generated-papers/update")
-    public Result<?> deleteGeneratedPaper(@RequestBody ExamPaperDTO request) {
+    public Result<?> updateGeneratedPaper(@RequestBody ExamPaperDTO request) {
         adminService.updateGeneratedPaper(request);
+        return Result.success("试卷更新成功");
+    }
+
+    @PostMapping("/generated-papers/delete")
+    public Result<?> deleteGeneratedPaper(@RequestBody Map<String, Object> request) {
+        adminService.deleteExamPaper(request.get("paperId").toString());
         return Result.success("试卷删除成功");
+    }
+
+    // 设置特定用户的试卷强制重考标识（完成后自动复位）
+    @PostMapping("/generated-papers/set-force-retake")
+    public Result<?> setForceRetake(@RequestBody Map<String, Object> request) {
+        String userId = (String) request.get("userId");
+        String paperId = (String) request.get("paperId");
+        adminService.setForceRetake(userId, paperId);
+        return Result.success("已设置用户强制重考，学生完成考试后自动复位");
     }
 
     //查询出所有的考试
@@ -192,6 +218,20 @@ public class AdminController {
     public Result<Map<String, Object>> getCategoryPerformance() {
         Map<String, Object> performance = adminService.getCategoryPerformance();
         return Result.success(performance);
+    }
+
+    // 获取试卷考试情况统计
+    @PostMapping("/paper-exam-status")
+    public Result<?> getPaperExamStatus(@RequestBody Map<String, Object> request) {
+        String paperId = request.get("paperId").toString();
+        return Result.success(adminService.getPaperExamStatus(paperId));
+    }
+
+    // 获取试卷考试详细情况
+    @PostMapping("/paper-exam-detail")
+    public Result<?> getPaperExamDetail(@RequestBody Map<String, Object> request) {
+        String paperId = request.get("paperId").toString();
+        return Result.success(adminService.getPaperExamDetail(paperId));
     }
 }
 

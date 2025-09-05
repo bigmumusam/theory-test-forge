@@ -23,8 +23,10 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
   const [isExamCompleted, setIsExamCompleted] = useState(false);
   const [showRefreshWarning, setShowRefreshWarning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [countdown, setCountdown] = useState(15);
   const { toast } = useToast();
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const countdownRef = useRef<NodeJS.Timeout | null>(null);
 
   // 解析多选题 correctAnswer 并修正 type 字段
   const parsedQuestions = exam.questions.map(q => {
@@ -157,8 +159,8 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
           if (Array.isArray(userAnswer) &&
               Array.isArray(question.correctAnswer) &&
               userAnswer.length === question.correctAnswer.length &&
-              userAnswer.every((v: number) => question.correctAnswer.includes(v)) &&
-              question.correctAnswer.every((v: number) => userAnswer.includes(v))) {
+              userAnswer.every((v: number) => Array.isArray(question.correctAnswer) && question.correctAnswer.includes(v)) &&
+              Array.isArray(question.correctAnswer) && question.correctAnswer.every((v: number) => userAnswer.includes(v))) {
             score += question.score;
             correctCount++;
           }
@@ -173,6 +175,29 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
   };
 
   const handleSubmit = async () => {
+    // 检查是否所有题目都已答题
+    const answeredCount = getAnsweredCount();
+    const totalQuestions = exam.questions.length;
+    
+    if (answeredCount < totalQuestions) {
+      toast({
+        title: "无法提交",
+        description: `还有 ${totalQuestions - answeredCount} 道题目未完成，请完成所有题目后再提交`,
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // 防止重复提交
+    if (submitting) {
+      toast({
+        title: "提交中",
+        description: "正在提交考试，请稍候...",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setSubmitting(true);
     try {
       // 准备提交数据
@@ -190,8 +215,13 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
       const response = await post('/exam/submit', submitData);
       
       if (response.code === 200) {
-        // 计算前端显示用的分数
-        const result = calculateScore();
+        // 使用后端返回的分数信息
+        const result = {
+          score: response.data.score,
+          totalScore: response.data.totalScore,
+          correctCount: response.data.correctCount,
+          totalQuestions: response.data.totalQuestions
+        };
         setExamResult(result);
         setIsExamCompleted(true);
         setShowSubmitDialog(true);
@@ -199,14 +229,6 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
         if (timerRef.current) {
           clearInterval(timerRef.current);
         }
-        // 自动返回首页
-        setTimeout(() => {
-          onComplete();
-        }, 1500);
-        toast({
-          title: "提交成功",
-          description: "您的考试已成功提交",
-        });
       } else {
         toast({
           title: "提交失败",
@@ -227,15 +249,30 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
   };
 
   const handleAutoSubmit = () => {
-    toast({
-      title: "时间到！",
-      description: "考试时间已结束，系统已自动提交试卷",
-      variant: "destructive"
-    });
+    const answeredCount = getAnsweredCount();
+    const totalQuestions = exam.questions.length;
+    
+    if (answeredCount < totalQuestions) {
+      toast({
+        title: "时间到！",
+        description: `考试时间已结束，但您还有 ${totalQuestions - answeredCount} 道题目未完成。系统将提交已完成的题目。`,
+        variant: "destructive"
+      });
+    } else {
+      toast({
+        title: "时间到！",
+        description: "考试时间已结束，系统已自动提交试卷",
+        variant: "destructive"
+      });
+    }
     handleSubmit();
   };
 
   const handleConfirmSubmit = () => {
+    // 清除倒计时
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+    }
     toast({
       title: "考试完成",
       description: `您的得分：${examResult?.score}分`,
@@ -243,8 +280,49 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
     onComplete();
   };
 
+  // 倒计时逻辑
+  useEffect(() => {
+    if (showSubmitDialog && examResult) {
+      setCountdown(15);
+      countdownRef.current = setInterval(() => {
+        setCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(countdownRef.current!);
+            setShowSubmitDialog(false);
+            onComplete();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+      }
+    };
+  }, [showSubmitDialog, examResult, onComplete]);
+
   const getAnsweredCount = (): number => {
-    return Object.keys(answers).length;
+    let count = 0;
+    exam.questions.forEach(question => {
+      const answer = answers[question.id];
+      if (answer !== undefined) {
+        if (question.type === 'multi') {
+          // 多选题：检查是否有选择选项
+          if (Array.isArray(answer) && answer.length > 0) {
+            count++;
+          }
+        } else {
+          // 单选题和判断题：检查是否有答案
+          if (answer !== '' && answer !== null) {
+            count++;
+          }
+        }
+      }
+    });
+    return count;
   };
 
   const isCurrentQuestionAnswered = (): boolean => {
@@ -438,18 +516,10 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
               </Button>
               
               <div className="flex space-x-3">
-                {currentQuestionIndex === exam.questions.length - 1 ? (
-                  <Button 
-                    onClick={handleSubmit}
-                    disabled={submitting}
-                    className="bg-green-600 hover:bg-green-700"
-                  >
-                    {submitting ? '提交中...' : '提交试卷'}
-                  </Button>
-                ) : (
+                {currentQuestionIndex < exam.questions.length - 1 && (
                   <Button 
                     onClick={handleNext}
-                    disabled={currentQuestionIndex === exam.questions.length - 1 || !isCurrentQuestionAnswered()}
+                    disabled={!isCurrentQuestionAnswered()}
                   >
                     下一题
                   </Button>
@@ -465,6 +535,11 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
               
               <div className="text-sm text-gray-600 mb-4">
                 已答题：{getAnsweredCount()}/{exam.questions.length}
+                {getAnsweredCount() < exam.questions.length && (
+                  <div className="text-red-600 text-xs mt-1">
+                    还需完成 {exam.questions.length - getAnsweredCount()} 道题目
+                  </div>
+                )}
               </div>
               
               <div className="grid grid-cols-5 gap-2 mb-6">
@@ -502,10 +577,13 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
               
               <Button 
                 onClick={handleSubmit}
-                disabled={submitting}
-                className="w-full mt-6 bg-green-600 hover:bg-green-700"
+                disabled={submitting || getAnsweredCount() < exam.questions.length}
+                className="w-full mt-6 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
-                {submitting ? '提交中...' : '提交试卷'}
+                {submitting ? '提交中...' : 
+                 getAnsweredCount() < exam.questions.length ? 
+                 `提交试卷 (${getAnsweredCount()}/${exam.questions.length})` : 
+                 '提交试卷'}
               </Button>
             </Card>
           </div>
@@ -513,10 +591,23 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
       </div>
 
       {/* 提交确认对话框 */}
-      <Dialog open={showSubmitDialog} onOpenChange={setShowSubmitDialog}>
+      <Dialog open={showSubmitDialog} onOpenChange={(open) => {
+        if (!open) {
+          // 手动关闭时清除倒计时
+          if (countdownRef.current) {
+            clearInterval(countdownRef.current);
+          }
+        }
+        setShowSubmitDialog(open);
+      }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>考试结果</DialogTitle>
+            <DialogTitle className="flex items-center justify-between">
+              <span>考试结果</span>
+              <span className="text-sm text-gray-500">
+                {countdown}s后自动关闭
+              </span>
+            </DialogTitle>
           </DialogHeader>
           
           {examResult && (
@@ -551,7 +642,7 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
               </div>
               
               <Button onClick={handleConfirmSubmit} className="w-full">
-                返回主页
+                立即返回主页 ({countdown}s)
               </Button>
             </div>
           )}

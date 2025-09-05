@@ -100,6 +100,7 @@ public class AuthService {
                 .role(request.getRole())
                 .status("1")
                 .department(request.getDepartment())
+                .userCategory(request.getUserCategory())
                 .createBy(customToken.getUserName())
                 .build());
     }
@@ -113,6 +114,7 @@ public class AuthService {
                 .role(request.getRole())
                 .status(request.getStatus())
                 .department(request.getDepartment())
+                .userCategory(request.getUserCategory())
                 .updateBy(customToken.getUserName())
                 .build());
     }
@@ -152,9 +154,10 @@ public class AuthService {
                 Object idNumberObj = row.get("身份证号");
                 Object departmentObj = row.get("所属部门");
                 Object roleObj = row.get("所属角色");
+                Object userCategoryObj = row.get("人员类别");
 
-                // 检查四个字段是否有一个为空
-                if (nameObj == null || idNumberObj == null || departmentObj == null || roleObj == null) {
+                // 检查五个字段是否有一个为空
+                if (nameObj == null || idNumberObj == null || departmentObj == null || roleObj == null || userCategoryObj == null) {
 
                     continue; // 忽略该条数据
                 }
@@ -163,13 +166,14 @@ public class AuthService {
                 String idNumber = idNumberObj.toString().trim();
                 String department = departmentObj.toString().trim();
                 String role = roleObj.toString().trim();
+                String userCategory = userCategoryObj.toString().trim();
 
                 // 进一步检查字符串是否为空
-                if (name.isEmpty() || idNumber.isEmpty() || department.isEmpty() || role.isEmpty()) {
-                    log.error("存在空值 name:{}，idNumber:{}，department:{}，role:{}",name,idNumber,department,role);
+                if (name.isEmpty() || idNumber.isEmpty() || department.isEmpty() || role.isEmpty() || userCategory.isEmpty()) {
+                    log.error("存在空值 name:{}，idNumber:{}，department:{}，role:{}，userCategory:{}",name,idNumber,department,role,userCategory);
                     continue;
                 }
-                log.info("导入用户 name:{}，idNumber:{}，department:{}，role:{}",name,idNumber,department,role);
+                log.info("导入用户 name:{}，idNumber:{}，department:{}，role:{}，userCategory:{}",name,idNumber,department,role,userCategory);
                 //判断idNumber 是否已经存在
                 long count = userMapper.selectCountByQuery(QueryWrapper.create().where(SYS_USER.ID_NUMBER.eq(idNumber)));
                 if(count>0){
@@ -181,6 +185,7 @@ public class AuthService {
                         .idNumber(row.get("身份证号").toString())
                         .department(row.get("所属部门").toString())
                         .role(getRoleCodeByName(row.get("所属角色").toString()))
+                        .userCategory(row.get("人员类别").toString())
                                 .status("1")
                                 .createBy(customToken.getUserName())
                         .build());

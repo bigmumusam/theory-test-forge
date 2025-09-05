@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import Footer from '../ui/footer';
 import { User } from '../../types/auth';
 import QuestionBankManager from './QuestionBankManager';
 import ExamConfigManager from './ExamConfigManager';
@@ -17,8 +18,14 @@ interface AdminDashboardProps {
 
 // 题目分类分布子组件
 interface CategorySummaryItem {
+  categoryId: string;
   categoryName: string;
+  categoryCode: string;
+  parentId: string;
+  level: number;
+  sortOrder: number;
   questionCount: number;
+  children?: CategorySummaryItem[];
 }
 
 const barGradients = [
@@ -29,26 +36,128 @@ const barGradients = [
   'from-red-500 to-red-400',
 ];
 
+// 层级颜色配置
+const levelColors = [
+  'text-blue-600 bg-blue-50 border-blue-200', // 一级
+  'text-green-600 bg-green-50 border-green-200', // 二级
+  'text-purple-600 bg-purple-50 border-purple-200', // 三级
+  'text-orange-600 bg-orange-50 border-orange-200', // 四级
+  'text-red-600 bg-red-50 border-red-200', // 五级
+];
+
+const CategoryItem: React.FC<{ item: CategorySummaryItem; level: number; maxCount: number; index: number }> = ({ item, level, maxCount, index }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const indent = level * 20; // 每级缩进20px
+  const levelColor = levelColors[level] || levelColors[levelColors.length - 1];
+  const hasChildren = item.children && item.children.length > 0;
+  
+  return (
+    <div>
+      <div className="flex justify-between items-center p-2 rounded border" style={{ paddingLeft: `${indent}px` }}>
+        <div className="flex items-center space-x-2">
+          {hasChildren && (
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="w-4 h-4 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors"
+            >
+              {isExpanded ? (
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              ) : (
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              )}
+            </button>
+          )}
+          {!hasChildren && <div className="w-4"></div>}
+          <span className={`text-sm font-medium px-2 py-1 rounded ${levelColor}`}>
+            {item.categoryName}
+          </span>
+        </div>
+        <span className="text-sm font-medium">{item.questionCount}题</span>
+      </div>
+      <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
+        <div
+          className={`h-2 rounded-full bg-gradient-to-r ${barGradients[index % barGradients.length]}`}
+          style={{ width: `${Math.round((item.questionCount / maxCount) * 100)}%` }}
+        />
+      </div>
+      {hasChildren && isExpanded && (
+        <div className="mt-2 space-y-2">
+          {item.children.map((child, childIndex) => (
+            <CategoryItem 
+              key={child.categoryId} 
+              item={child} 
+              level={level + 1} 
+              maxCount={maxCount}
+              index={index + childIndex + 1}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// 递归排序函数
+const sortCategories = (categories: CategorySummaryItem[]): CategorySummaryItem[] => {
+  return categories
+    .sort((a, b) => {
+      // 首先按层级排序
+      if (a.level !== b.level) {
+        return a.level - b.level;
+      }
+      // 然后按排序顺序排序
+      if (a.sortOrder !== b.sortOrder) {
+        return a.sortOrder - b.sortOrder;
+      }
+      // 最后按名称排序
+      return a.categoryName.localeCompare(b.categoryName);
+    })
+    .map(category => ({
+      ...category,
+      children: category.children ? sortCategories(category.children) : []
+    }));
+};
+
 const DepartmentDistribution: React.FC<{ summary?: CategorySummaryItem[] }> = ({ summary }) => {
   if (!summary || summary.length === 0) {
     return <div className="text-center text-gray-400 py-8">暂无记录</div>;
   }
-  const maxCount = Math.max(...summary.map(c => c.questionCount || 0), 1);
+  
+  // 对分类进行排序
+  const sortedSummary = sortCategories(summary);
+  
+  // 计算所有层级的最大题目数量
+  const getAllQuestionCounts = (items: CategorySummaryItem[]): number[] => {
+    const counts: number[] = [];
+    const traverse = (items: CategorySummaryItem[]) => {
+      items.forEach(item => {
+        counts.push(item.questionCount || 0);
+        if (item.children && item.children.length > 0) {
+          traverse(item.children);
+        }
+      });
+    };
+    traverse(items);
+    return counts;
+  };
+  
+  const allCounts = getAllQuestionCounts(sortedSummary);
+  const maxCount = Math.max(...allCounts, 1);
+  
   return (
     <div className="space-y-3">
-      {summary.map((c, idx) => (
-        <div key={c.categoryName}>
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-gray-600">{c.categoryName}</span>
-            <span className="text-sm font-medium">{c.questionCount}题</span>
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div
-              className={`h-2 rounded-full bg-gradient-to-r ${barGradients[idx % barGradients.length]}`}
-              style={{ width: `${Math.round((c.questionCount / maxCount) * 100)}%` }}
-            />
-          </div>
-        </div>
+      {sortedSummary.map((item, index) => (
+        <CategoryItem 
+          key={item.categoryId} 
+          item={item} 
+          level={0} 
+          maxCount={maxCount}
+          index={index}
+        />
       ))}
     </div>
   );
@@ -70,11 +179,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         <div className="container mx-auto px-4 py-4">
           <div className="flex justify-between items-center">
             <div className="flex items-center space-x-4">
-              <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                </svg>
-              </div>
+              <img 
+                src="/image/905-logo.jpeg" 
+                alt="中国人民解放军海军第九〇五医院" 
+                className="w-10 h-10 object-contain"
+              />
               <div>
                 <h1 className="text-xl font-bold text-gray-800">管理员控制台</h1>
                 <p className="text-sm text-gray-600">理论考试系统</p>
@@ -212,6 +321,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
           </TabsContent>
         </Tabs>
       </div>
+      
+      <Footer />
     </div>
   );
 };

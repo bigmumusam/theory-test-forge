@@ -5,6 +5,16 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { 
+  AlertDialog, 
+  AlertDialogAction, 
+  AlertDialogCancel, 
+  AlertDialogContent, 
+  AlertDialogDescription, 
+  AlertDialogFooter, 
+  AlertDialogHeader, 
+  AlertDialogTitle 
+} from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Trash2, Edit, Plus, Search, Upload } from 'lucide-react';
@@ -21,6 +31,7 @@ const UserManager = () => {
   const [searchKeyword, setSearchKeyword] = useState('');
   const [selectedRole, setSelectedRole] = useState('all');
   const [selectedDepartment, setSelectedDepartment] = useState('all');
+  const [selectedUserCategory, setSelectedUserCategory] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
@@ -30,11 +41,16 @@ const UserManager = () => {
     idNumber: '',
     role: 'student',
     department: '',
+    userCategory: '指挥管理军官',
     status: '1'
   });
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
+  
+  // 删除确认对话框状态
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<any>(null);
   const [totalRows, setTotalRows] = useState(0);
 
   // 查询用户列表
@@ -46,6 +62,7 @@ const UserManager = () => {
         keyword: searchKeyword,
         role: selectedRole === 'all' ? undefined : selectedRole,
         department: selectedDepartment === 'all' ? undefined : selectedDepartment,
+        userCategory: selectedUserCategory === 'all' ? undefined : selectedUserCategory,
         status: selectedStatus === 'all' ? undefined : selectedStatus
       };
       const res = await request('/auth/users/list', {
@@ -63,11 +80,11 @@ const UserManager = () => {
   useEffect(() => {
     fetchUsers();
     // eslint-disable-next-line
-  }, [currentPage, selectedRole, selectedDepartment, selectedStatus, searchKeyword]);
+  }, [currentPage, selectedRole, selectedDepartment, selectedUserCategory, selectedStatus, searchKeyword]);
 
   const handleAddUser = () => {
     setEditingUser(null);
-    setFormData({ userName: '', idNumber: '', role: 'student', department: '', status: '1' });
+    setFormData({ userName: '', idNumber: '', role: 'student', department: '', userCategory: '指挥管理军官', status: '1' });
     setIsDialogOpen(true);
   };
 
@@ -78,6 +95,7 @@ const UserManager = () => {
       idNumber: user.idNumber,
       role: user.role,
       department: user.department,
+      userCategory: user.userCategory || '指挥管理军官',
       status: user.status
     });
     setIsDialogOpen(true);
@@ -115,6 +133,35 @@ const UserManager = () => {
     }
   };
 
+  const handleDeleteUser = (user) => {
+    if (user.role === 'admin') {
+      toast({ title: '错误', description: '不能删除管理员账户', variant: 'destructive' });
+      return;
+    }
+    
+    setUserToDelete(user);
+    setDeleteDialogOpen(true);
+  };
+
+  // 确认删除用户
+  const confirmDeleteUser = async () => {
+    if (!userToDelete) return;
+    
+    try {
+      await request('/auth/users/delete', {
+        method: 'POST',
+        body: JSON.stringify({ userId: userToDelete.id })
+      });
+      toast({ title: '成功', description: '用户已删除' });
+      fetchUsers();
+    } catch (error) {
+      toast({ title: '删除失败', description: String(error), variant: 'destructive' });
+    } finally {
+      setDeleteDialogOpen(false);
+      setUserToDelete(null);
+    }
+  };
+
   const handleImportUsers = async (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -140,6 +187,7 @@ const UserManager = () => {
     setSearchKeyword('');
     setSelectedRole('all');
     setSelectedDepartment('all');
+    setSelectedUserCategory('all');
     setSelectedStatus('all');
     setCurrentPage(1);
   };
@@ -213,6 +261,21 @@ const UserManager = () => {
                     placeholder="请输入所属部门"
                   />
                 </div>
+                <div>
+                  <Label htmlFor="userCategory">人员类别</Label>
+                  <Select value={formData.userCategory} onValueChange={(value) => setFormData({...formData, userCategory: value})}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="选择人员类别" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="指挥管理军官">指挥管理军官</SelectItem>
+                      <SelectItem value="专业技术军官">专业技术军官</SelectItem>
+                      <SelectItem value="文职">文职</SelectItem>
+                      <SelectItem value="军士">军士</SelectItem>
+                      <SelectItem value="聘用制">聘用制</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 {editingUser && (
                 <div>
                   <Label htmlFor="status">状态</Label>
@@ -253,6 +316,19 @@ const UserManager = () => {
               />
             </div>
           </div>
+          <Select value={selectedUserCategory} onValueChange={setSelectedUserCategory}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="人员类别筛选" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部类别</SelectItem>
+              <SelectItem value="指挥管理军官">指挥管理军官</SelectItem>
+              <SelectItem value="专业技术军官">专业技术军官</SelectItem>
+              <SelectItem value="文职">文职</SelectItem>
+              <SelectItem value="军士">军士</SelectItem>
+              <SelectItem value="聘用制">聘用制</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={selectedRole} onValueChange={setSelectedRole}>
             <SelectTrigger className="w-40">
               <SelectValue placeholder="角色筛选" />
@@ -285,7 +361,7 @@ const UserManager = () => {
               <SelectItem value="0">停用</SelectItem>
             </SelectContent>
           </Select>
-          {(searchKeyword || selectedRole !== 'all' || selectedDepartment !== 'all') && (
+          {(searchKeyword || selectedRole !== 'all' || selectedDepartment !== 'all' || selectedUserCategory !== 'all') && (
             <Button variant="outline" onClick={clearFilters}>
               清除筛选
             </Button>
@@ -299,9 +375,10 @@ const UserManager = () => {
                 <TableHead className="font-bold text-gray-900 px-2 py-1">身份证号</TableHead>
                 <TableHead className="font-bold text-gray-900 px-2 py-1">角色</TableHead>
                 <TableHead className="font-bold text-gray-900 px-2 py-1">所属部门</TableHead>
+                <TableHead className="font-bold text-gray-900 px-2 py-1">人员类别</TableHead>
                 <TableHead className="font-bold text-gray-900 px-2 py-1">状态</TableHead>
                 <TableHead className="font-bold text-gray-900 px-2 py-1">创建时间</TableHead>
-                <TableHead className="font-bold text-gray-900 w-32 px-2 py-1">操作</TableHead>
+                <TableHead className="font-bold text-gray-900 w-48 px-2 py-1">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -321,6 +398,7 @@ const UserManager = () => {
                     </Badge>
                   </TableCell>
                   <TableCell className="px-2 py-1">{options?.departments?.[user.department] || user.department}</TableCell>
+                  <TableCell className="px-2 py-1">{user.userCategory || '指挥管理军官'}</TableCell>
                   <TableCell className="px-2 py-1">
                     <Badge variant={user.status === '1' ? 'default' : 'destructive'}>
                       {user.status === '1' ? '正常' : '停用'}
@@ -328,7 +406,7 @@ const UserManager = () => {
                   </TableCell>
                   <TableCell className="px-2 py-1">{user.createTime}</TableCell>
                   <TableCell className="px-2 py-1">
-                    <div className="flex space-x-2">
+                    <div className="flex space-x-3">
                       <Button
                         variant="outline"
                         size="sm"
@@ -353,6 +431,15 @@ const UserManager = () => {
                         disabled={user.role === 'admin'}
                       >
                         {user.status === '1' ? '停用' : '启用'}
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        className="h-6 px-2 py-0 text-xs rounded-full"
+                        onClick={() => handleDeleteUser(user)}
+                        disabled={user.role === 'admin'}
+                      >
+                        <Trash2 className="w-3 h-3" />
                       </Button>
                     </div>
                   </TableCell>
@@ -408,6 +495,27 @@ const UserManager = () => {
         onImport={handleImportUsers}
         templateDownloadUrl="/templates/用户导入模版.xlsx"
       />
+
+      {/* 删除确认对话框 */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除用户"{userToDelete?.userName}"吗？此操作不可恢复。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmDeleteUser}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

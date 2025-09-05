@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import Footer from '../ui/footer';
 import { User } from '../../types/auth';
 import ExamList from './ExamList';
 import ExamSession from './ExamSession';
@@ -42,13 +43,13 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onLogout }) =
         <div className="container mx-auto px-4 py-4">
           <div className="flex justify-between items-center">
             <div className="flex items-center space-x-4">
-              <div className="w-10 h-10 bg-green-600 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-              </div>
+              <img 
+                src="/image/905-logo.jpeg" 
+                alt="中国人民解放军海军第九〇五医院" 
+                className="w-10 h-10 object-contain"
+              />
               <div>
-                <h1 className="text-xl font-bold text-gray-800">学员中心</h1>
+                <h1 className="text-xl font-bold text-gray-800">考试中心</h1>
                 <p className="text-sm text-gray-600">理论考试系统</p>
               </div>
             </div>
@@ -85,6 +86,8 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onLogout }) =
         {/* 考试列表 */}
         <ExamList user={user} onStartExam={handleStartExam} />
       </div>
+      
+      <Footer />
     </div>
   );
 };

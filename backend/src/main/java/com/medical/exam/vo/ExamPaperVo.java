@@ -25,6 +25,7 @@ public class ExamPaperVo {
     private String updateBy;
     private Date updateTime;
     private String remark;
+    private String userCategory; // 人员类别
 
     private String finished;
 } 

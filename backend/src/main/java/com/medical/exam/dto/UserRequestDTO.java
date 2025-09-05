@@ -27,4 +27,7 @@ public class UserRequestDTO {
     @NotBlank(message = "题目分类不能为空")
     private String department;
 
+    @NotBlank(message = "人员类别不能为空")
+    private String userCategory;
+
 }

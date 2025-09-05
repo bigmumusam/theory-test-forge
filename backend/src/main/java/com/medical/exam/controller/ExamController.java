@@ -11,6 +11,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
 import java.util.Map;
 
@@ -47,6 +48,11 @@ public class ExamController {
         return Result.success("批量重新考试安排成功");
     }
 
+    @PostMapping("/exam-results/export")
+    public void exportExamResults(@RequestBody ExamResultQueryDTO request, HttpServletResponse response) {
+        adminService.exportExamResults(request, response);
+    }
+
     @PostMapping("/start")
     public Result<?> startExam(@RequestBody StartExamDTO request) {
         String recordId = examService.startExam(request);
@@ -55,7 +61,7 @@ public class ExamController {
 
     @PostMapping("/submit")
     public Result<?> submitExam(@Valid @RequestBody SubmitExamRequest request) {
-        examService.submitExam(request);
-        return Result.success("考试提交成功");
+        Map<String, Object> result = examService.submitExam(request);
+        return Result.success("考试提交成功", result);
     }
 }

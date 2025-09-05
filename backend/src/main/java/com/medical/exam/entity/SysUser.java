@@ -28,6 +28,7 @@ public class SysUser  implements Serializable {
     private String userName;
     private String role;
     private String department;
+    private String userCategory; // 人员类别
     private String status;
     private String loginIp;
     private Date loginDate;
@@ -39,4 +40,6 @@ public class SysUser  implements Serializable {
     @Column(onUpdateValue = "now()")
     private Date updateTime;
     private String remark;
+    @Column(isLogicDelete = true)
+    private Boolean deleted;
 }

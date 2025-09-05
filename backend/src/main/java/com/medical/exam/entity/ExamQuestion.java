@@ -25,9 +25,9 @@ public class ExamQuestion {
     private String questionContent;
     private String questionOptions;
     private String correctAnswer;
+    private Integer score; // 题目分数（从试卷配置中获取）
     private String categoryId;
     private String difficulty;
-    private Integer score;
     private String status;
     private String createDept;
     private String createBy;

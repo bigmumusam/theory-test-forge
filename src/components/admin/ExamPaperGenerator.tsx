@@ -11,6 +11,22 @@ import { request } from '@/lib/request';
 import { useOptions } from '../../context/OptionsContext';
 import { v4 as uuidv4 } from 'uuid';
 
+// 递归查找分类名称
+const getCategoryNameById = (categories: any[], categoryId: string): string | null => {
+  if (!categories) return null;
+  
+  for (const category of categories) {
+    if (category.categoryId === categoryId) {
+      return category.categoryName;
+    }
+    if (category.children && category.children.length > 0) {
+      const found = getCategoryNameById(category.children, categoryId);
+      if (found) return found;
+    }
+  }
+  return null;
+};
+
 interface ExamPaperGeneratorProps {
   isOpen: boolean;
   onClose: () => void;
@@ -173,7 +189,11 @@ const ExamPaperGenerator: React.FC<ExamPaperGeneratorProps> = ({ isOpen, onClose
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">题目分类：</span>
-                <span>{options?.categories?.[config.categories[0]] || config.categories[0]}</span>
+                <span>{getCategoryNameById(options?.categories, config.categories[0]) || config.categories[0]}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">人员类别：</span>
+                <span className="text-blue-600 font-medium">{config.userCategory || '指挥管理军官'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">时长：</span>

@@ -4,11 +4,17 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.io.Serializable;
+import java.util.List;
 
 @Data
 public class ExamCategoryVo {
     private String categoryId;
     private String categoryName;
+    private String categoryCode;
+    private String parentId;
+    private Integer level;
+    private Integer sortOrder;
     private String remark;
     private Long questionCount;
+    private List<ExamCategoryVo> children;
 }

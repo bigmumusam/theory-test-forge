@@ -12,9 +12,11 @@ public class ExamResultVo {
     private String idNumber;
     private String examName;
     private String categoryName;
-    private String score;
+    private String userCategory; // 人员类别
+    private Integer score;
+    private Integer totalScore;
     private String duration;
     private String examDate;
     private String status;
-    private Integer retake;
+    private String retake;
 }

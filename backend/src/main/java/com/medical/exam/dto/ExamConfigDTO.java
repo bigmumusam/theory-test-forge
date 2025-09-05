@@ -7,6 +7,7 @@ public class ExamConfigDTO {
     private String configId;
     private String configName;
     private String categoryId;
+    private String userCategory; // 人员类别
     //考试时长
     private Integer duration;
     private Integer totalScore;

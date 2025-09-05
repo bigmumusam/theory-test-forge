@@ -4,8 +4,8 @@ import com.medical.exam.entity.SysLog;
 import lombok.Builder;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.util.List;
-import java.util.Map;
 
 @Data
 @Builder
@@ -14,7 +14,7 @@ public class DashboardVo {
     private Integer questionCount;
     private Integer examResultCountToday;
     private Integer categoryCount;
-    private String avgExamScore;
+    private BigDecimal avgExamScore;
 
     private List<SysLog> sysLogs;
     private List<CategoryCount> categorySummary;

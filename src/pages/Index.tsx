@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import LoginForm from '../components/auth/LoginForm';
 import AdminDashboard from '../components/admin/AdminDashboard';
 import StudentDashboard from '../components/student/StudentDashboard';
+import Footer from '../components/ui/footer';
 import { Card } from '@/components/ui/card';
 import { useOptions } from '../context/OptionsContext';
 
@@ -74,7 +75,7 @@ const Index = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <h3 className="text-lg font-semibold text-gray-800 mb-2">安全认证</h3>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">实名认证</h3>
               <p className="text-gray-600 text-sm">实名制登录，确保考试公平公正</p>
             </div>
             
@@ -84,8 +85,8 @@ const Index = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                 </svg>
               </div>
-              <h3 className="text-lg font-semibold text-gray-800 mb-2">专业题库</h3>
-              <p className="text-gray-600 text-sm">分题目分类题库管理，内容专业权威</p>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">理论题库</h3>
+              <p className="text-gray-600 text-sm">分题目分类题库管理</p>
             </div>
             
             <div className="text-center p-6 bg-white/60 rounded-lg">
@@ -98,10 +99,8 @@ const Index = () => {
               <p className="text-gray-600 text-sm">自动生成试卷，实时评分反馈</p>
             </div>
           </div>
-          <div className="mt-8 max-w-2xl mx-auto text-center text-gray-700 text-sm">
-            <div className="mb-2 font-semibold">演示账号</div>
-            <div>学员：系统中有效身份证号和姓名</div>
-          </div>
+          
+          <Footer />
         </div>
       </div>
     );

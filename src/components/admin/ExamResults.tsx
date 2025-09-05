@@ -74,8 +74,12 @@ const ExamResults: React.FC = () => {
   const { toast } = useToast();
   const [summary, setSummary] = useState<any>(null);
   const [results, setResults] = useState<ExamResult[]>([]);
-  const [filterCategory, setFilterCategory] = useState<string>('all');
+
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [passStatus, setPassStatus] = useState<string>('all');
+  const [retakeStatus, setRetakeStatus] = useState<string>('all');
+  const [examNameFilter, setExamNameFilter] = useState<string>('');
+  const [examNameDebounced, setExamNameDebounced] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(10);
@@ -84,7 +88,10 @@ const ExamResults: React.FC = () => {
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedResult, setSelectedResult] = useState<ExamDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const categories = ['消化内科', '肝胆外科', '心血管内科', '呼吸内科'];
+  const [retakeDialogOpen, setRetakeDialogOpen] = useState(false);
+  const [retakeType, setRetakeType] = useState<'single' | 'batch'>('single');
+  const [retakeRecordId, setRetakeRecordId] = useState<string>('');
+
   // 答题详情展开状态
   const [expanded, setExpanded] = React.useState<string | null>(null);
 
@@ -97,23 +104,57 @@ const ExamResults: React.FC = () => {
 
   // 获取考试结果列表
   const fetchResults = async () => {
-    const params = {
-      category: filterCategory === 'all' ? undefined : filterCategory,
-      status: filterStatus === 'all' ? undefined : filterStatus,
-      keyword: searchTerm,
-      page: currentPage,
-      size: pageSize
-    };
-    const res = await post('/exam/exam-results', params);
-    setResults(res.data.records || []);
-    setTotal(res.data.totalRow || 0);
-    setSelectedResults([]); // 切页时清空多选
+    try {
+      const params = {
+        status: filterStatus === 'all' ? undefined : filterStatus,
+        passStatus: passStatus === 'all' ? undefined : passStatus,
+        retakeStatus: retakeStatus === 'all' ? undefined : retakeStatus,
+        examName: examNameDebounced || undefined,
+        keyword: searchTerm,
+        page: currentPage,
+        size: pageSize
+      };
+      const res = await post('/exam/exam-results', params);
+      
+      // 检查响应数据是否存在
+      if (res && res.data) {
+        setResults(res.data.records || []);
+        setTotal(res.data.totalRow || 0);
+      } else {
+        setResults([]);
+        setTotal(0);
+        toast({
+          title: "查询失败",
+          description: "获取考试结果数据失败，请稍后重试",
+          variant: "destructive"
+        });
+      }
+      setSelectedResults([]); // 切页时清空多选
+    } catch (error) {
+      console.error('获取考试结果失败:', error);
+      setResults([]);
+      setTotal(0);
+      setSelectedResults([]);
+      toast({
+        title: "查询失败",
+        description: "获取考试结果数据失败，请稍后重试",
+        variant: "destructive"
+      });
+    }
   };
+
+  // 防抖处理考试名称筛选
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setExamNameDebounced(examNameFilter);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [examNameFilter]);
 
   useEffect(() => {
     fetchResults();
     // eslint-disable-next-line
-  }, [filterCategory, filterStatus, searchTerm, currentPage]);
+  }, [filterStatus, passStatus, retakeStatus, examNameDebounced, searchTerm, currentPage]);
 
   // 排序：待开始 > 进行中 > 已完成/超时
   const sortedResults = [...results].sort((a, b) => {
@@ -144,6 +185,14 @@ const ExamResults: React.FC = () => {
   };
 
   const getScoreColor = (score: number, totalScore: number) => {
+    // 处理 NaN 和 null 值
+    if (isNaN(score) || score === null || score === undefined) {
+      return 'text-gray-500 font-semibold';
+    }
+    if (isNaN(totalScore) || totalScore === null || totalScore === undefined || totalScore === 0) {
+      return 'text-gray-500 font-semibold';
+    }
+    
     const percentage = (score / totalScore) * 100;
     if (percentage >= 90) return 'text-green-600 font-semibold';
     if (percentage >= 80) return 'text-blue-600 font-semibold';
@@ -152,10 +201,10 @@ const ExamResults: React.FC = () => {
     return 'text-red-600 font-semibold';
   };
 
-  // 全选只选未重考的行
+  // 全选所有已完成的行
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedResults(paginatedResults.filter(r => r.retake != 1).map(r => r.recordId));
+      setSelectedResults(paginatedResults.filter(r => r.status === 'completed').map(r => r.recordId));
     } else {
       setSelectedResults([]);
     }
@@ -169,8 +218,34 @@ const ExamResults: React.FC = () => {
     }
   };
 
-  // 批量重考
-  const handleBatchRetake = async () => {
+  // 单个重考确认
+  const handleSingleRetake = (recordId: string) => {
+    setRetakeType('single');
+    setRetakeRecordId(recordId);
+    setRetakeDialogOpen(true);
+  };
+
+  // 执行单个重考
+  const executeSingleRetake = async () => {
+    try {
+      await post('/exam/exam-results/batch-retake', { recordIds: [retakeRecordId] });
+      toast({
+        title: "重新考试",
+        description: "已为该考生安排重新考试"
+      });
+      setRetakeDialogOpen(false);
+      fetchResults();
+    } catch (e) {
+      toast({
+        title: "操作失败",
+        description: "重考失败，请重试",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // 批量重考确认
+  const handleBatchRetake = () => {
     if (selectedResults.length === 0) {
       toast({
         title: "请选择记录",
@@ -179,14 +254,21 @@ const ExamResults: React.FC = () => {
       });
       return;
     }
+    setRetakeType('batch');
+    setRetakeDialogOpen(true);
+  };
+
+  // 执行批量重考
+  const executeBatchRetake = async () => {
     try {
       // selectedResults存的就是recordId
       await post('/exam/exam-results/batch-retake', { recordIds: selectedResults });
-    toast({
-      title: "批量重新考试",
-      description: `已为 ${selectedResults.length} 位考生安排重新考试`
-    });
-    setSelectedResults([]);
+      toast({
+        title: "批量重新考试",
+        description: `已为 ${selectedResults.length} 位考生安排重新考试`
+      });
+      setSelectedResults([]);
+      setRetakeDialogOpen(false);
       fetchResults();
     } catch (e) {
       toast({
@@ -222,26 +304,65 @@ const ExamResults: React.FC = () => {
     }
   };
 
-  const exportResults = () => {
-    const csvContent = [
-      ['姓名', '身份证号', '考试名称', '题目分类', '得分', '总分', '用时(分钟)', '完成时间', '状态'],
-      ...results.map(result => [
-        result.userName || result.studentName,
-        result.idNumber || '',
-        result.examName,
-        result.categoryName || result.category,
-        result.score?.toString() || '',
-        result.totalScore?.toString() || '',
-        result.duration?.toString() || '',
-        result.examDate || result.completedAt || '',
-        result.status === 'completed' ? '已完成' : result.status === 'timeout' ? '超时' : '进行中'
-      ])
-    ].map(row => row.join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = '考试结果.csv';
-    link.click();
+  const exportResults = async () => {
+    try {
+      // 构建查询参数
+      const queryParams = {
+        category: filterStatus,
+        status: filterStatus,
+        keyword: searchTerm,
+        passStatus: passStatus,
+        retakeStatus: retakeStatus,
+        examName: examNameDebounced
+      };
+
+      // 调用后端导出API
+      const response = await fetch(`${import.meta.env.VITE_API_BASE}/exam/exam-results/export`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(queryParams)
+      });
+
+      if (!response.ok) {
+        throw new Error('导出失败');
+      }
+
+      // 获取文件名
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = 'exam_results.xlsx';
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename=(.+)/);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
+
+      // 下载文件
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: "导出成功",
+        description: "考试结果已导出到Excel文件"
+      });
+    } catch (error) {
+      console.error('导出失败:', error);
+      toast({
+        title: "导出失败",
+        description: "导出考试结果时发生错误，请重试",
+        variant: "destructive"
+      });
+    }
   };
 
   // 拖动逻辑
@@ -289,7 +410,7 @@ const ExamResults: React.FC = () => {
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-gray-800">考试结果</h2>
         <div className="flex space-x-2">
-          {selectedResults.length > 0 && paginatedResults.some(r => r.retake != 1 && selectedResults.includes(r.recordId)) && (
+          {selectedResults.length > 0 && paginatedResults.some(r => r.status === 'completed' && selectedResults.includes(r.recordId)) && (
             <Button onClick={handleBatchRetake} variant="outline">
               <RotateCcw className="w-4 h-4 mr-2" />
               批量重新考试 ({selectedResults.length})
@@ -338,17 +459,15 @@ const ExamResults: React.FC = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <Select value={filterCategory} onValueChange={setFilterCategory}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="筛选题目分类" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部题目分类</SelectItem>
-              {categories.map(cat => (
-                <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+
+          <div className="w-48">
+            <Input 
+              placeholder="筛选考试名称..."
+              value={examNameFilter}
+              onChange={(e) => setExamNameFilter(e.target.value)}
+            />
+          </div>
+
           <Select value={filterStatus} onValueChange={setFilterStatus}>
             <SelectTrigger className="w-32">
               <SelectValue placeholder="状态" />
@@ -360,11 +479,35 @@ const ExamResults: React.FC = () => {
               <SelectItem value="timeout">超时</SelectItem>
             </SelectContent>
           </Select>
+
+          <Select value={passStatus} onValueChange={setPassStatus}>
+            <SelectTrigger className="w-32">
+              <SelectValue placeholder="及格状态" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部</SelectItem>
+              <SelectItem value="pass">及格</SelectItem>
+              <SelectItem value="fail">不及格</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={retakeStatus} onValueChange={setRetakeStatus}>
+            <SelectTrigger className="w-32">
+              <SelectValue placeholder="重考状态" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部</SelectItem>
+              <SelectItem value="normal">正常考试</SelectItem>
+              <SelectItem value="retake">重考</SelectItem>
+            </SelectContent>
+          </Select>
             <Button 
               variant="outline" 
               onClick={() => {
-                setFilterCategory('all');
                 setFilterStatus('all');
+                setPassStatus('all');
+                setRetakeStatus('all');
+                setExamNameFilter('');
                 setSearchTerm('');
                 setCurrentPage(1);
               }}
@@ -381,19 +524,19 @@ const ExamResults: React.FC = () => {
               <TableRow className="bg-gray-50">
                 <TableHead className="w-12">
                   <Checkbox
-                    checked={paginatedResults.filter(r => r.retake != 1).length > 0 && paginatedResults.filter(r => r.retake != 1).every(r => selectedResults.includes(r.recordId))}
+                    checked={paginatedResults.filter(r => r.status === 'completed').length > 0 && paginatedResults.filter(r => r.status === 'completed').every(r => selectedResults.includes(r.recordId))}
                     onCheckedChange={handleSelectAll}
                   />
                 </TableHead>
                 <TableHead className="font-bold text-gray-900">考生姓名</TableHead>
                 <TableHead className="font-bold text-gray-900">身份证号</TableHead>
                 <TableHead className="font-bold text-gray-900">考试名称</TableHead>
-                <TableHead className="font-bold text-gray-900">题目分类</TableHead>
+
                 <TableHead className="font-bold text-gray-900">考试得分</TableHead>
                 <TableHead className="font-bold text-gray-900">用时</TableHead>
                 <TableHead className="font-bold text-gray-900">完成时间</TableHead>
                 <TableHead className="font-bold text-gray-900">状态</TableHead>
-                <TableHead className="font-bold text-gray-900">是否重考过</TableHead>
+                <TableHead className="font-bold text-gray-900">重考</TableHead>
                 <TableHead className="font-bold text-gray-900 w-32">操作</TableHead>
               </TableRow>
             </TableHeader>
@@ -403,7 +546,7 @@ const ExamResults: React.FC = () => {
                 return (
                   <TableRow key={rowKey}>
                   <TableCell>
-                      {result.retake == 1 ? null : (
+                      {result.status === 'completed' && (
                     <Checkbox
                           checked={selectedResults.includes(rowKey)}
                           onCheckedChange={(checked) => {
@@ -423,11 +566,13 @@ const ExamResults: React.FC = () => {
                   </TableCell>
                     <TableCell className="font-mono text-sm">{result.idNumber}</TableCell>
                   <TableCell>{result.examName}</TableCell>
-                    <TableCell>{result.categoryName || result.category}</TableCell>
                   <TableCell>
                     <div>
                         <p className={getScoreColor(Number(result.score), Number(result.totalScore || 100))}>
-                          {result.score}/{result.totalScore || 100}
+                          {result.score !== null && result.score !== undefined ? 
+                            `${result.score}/${result.totalScore || 100}` : 
+                            '未评分'
+                          }
                       </p>
                     </div>
                   </TableCell>
@@ -456,8 +601,8 @@ const ExamResults: React.FC = () => {
                         <Button
                           size="sm"
                           variant="outline"
-                            onClick={() => handleBatchRetake()}
-                            disabled={result.retake == 1}
+                            onClick={() => handleSingleRetake(result.recordId)}
+                            disabled={false}
                         >
                           <RotateCcw className="w-4 h-4" />
                         </Button>
@@ -554,11 +699,29 @@ const ExamResults: React.FC = () => {
                                       displayOpt = opt;
                                       letter = OPTION_LETTERS[i] || '';
                                     }
-                                    // 适配下标型 correctAnswer/userAnswer
-                                    const correctIndexes = Array.isArray(ans.correctAnswer) ? ans.correctAnswer : [ans.correctAnswer];
-                                    const userIndexes = Array.isArray(ans.userAnswer) ? ans.userAnswer : [ans.userAnswer];
-                                    const isCorrect = correctIndexes.includes(i);
-                                    const isUserSelected = userIndexes.includes(i);
+                                    
+                                    // 根据题目类型处理答案比较
+                                    let isCorrect = false;
+                                    let isUserSelected = false;
+                                    
+                                    if (isJudge) {
+                                      // 判断题：比较字符串答案
+                                      const correctAnswer = Array.isArray(ans.correctAnswer) ? ans.correctAnswer[0] : ans.correctAnswer;
+                                      const userAnswer = Array.isArray(ans.userAnswer) ? ans.userAnswer[0] : ans.userAnswer;
+                                      isCorrect = correctAnswer === opt;
+                                      isUserSelected = userAnswer === opt;
+                                    } else {
+                                      // 选择题：比较数字索引
+                                      const correctIndexes = Array.isArray(ans.correctAnswer) ? ans.correctAnswer : [ans.correctAnswer];
+                                      const userIndexes = Array.isArray(ans.userAnswer) ? ans.userAnswer : [ans.userAnswer];
+                                      
+                                      // 确保数据类型一致，转换为数字进行比较
+                                      const correctIndexesNum = correctIndexes.map((idx: any) => Number(idx));
+                                      const userIndexesNum = userIndexes.map((idx: any) => Number(idx));
+                                      
+                                      isCorrect = correctIndexesNum.includes(i);
+                                      isUserSelected = userIndexesNum.includes(i);
+                                    }
                                     let highlightClass = '';
                                     if (isCorrect && isUserSelected) {
                                       highlightClass = 'bg-green-100 text-green-700 font-bold'; // 选对
@@ -597,6 +760,69 @@ const ExamResults: React.FC = () => {
                   </Button>
         </DialogContent>
       </Dialog>
+
+      {/* 重考确认弹窗 */}
+      <Dialog open={retakeDialogOpen} onOpenChange={setRetakeDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+              <span>确认重新考试</span>
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="text-center">
+              <div className="w-16 h-16 mx-auto bg-orange-100 rounded-full flex items-center justify-center mb-4">
+                <svg className="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                {retakeType === 'single' ? '确认重新考试' : '确认批量重新考试'}
+              </h3>
+              <p className="text-gray-600 text-sm">
+                {retakeType === 'single' 
+                  ? '确定要为该考生安排重新考试吗？' 
+                  : `确定要为 ${selectedResults.length} 位考生安排重新考试吗？`
+                }
+              </p>
+            </div>
+            
+            <div className="bg-yellow-50 border border-yellow-200 rounded p-4">
+              <div className="flex items-start space-x-3">
+                <svg className="w-5 h-5 text-yellow-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                <div className="text-sm text-yellow-800">
+                  <p className="font-medium mb-1">重要提醒：</p>
+                  <p>• 考生需要重新完成所有题目</p>
+                  <p>• 此操作不可撤销</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex space-x-3">
+              <Button 
+                variant="outline" 
+                onClick={() => setRetakeDialogOpen(false)}
+                className="flex-1"
+              >
+                取消
+              </Button>
+              <Button 
+                onClick={retakeType === 'single' ? executeSingleRetake : executeBatchRetake}
+                className="flex-1 bg-orange-600 hover:bg-orange-700"
+              >
+                确认重新考试
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {results.length === 0 && (
         <Card className="p-12 text-center">
           <p className="text-gray-500">暂无考试结果</p>

@@ -1,8 +1,20 @@
 import React, { createContext, useContext, useState } from 'react';
 
+export interface CategoryOption {
+  categoryId: string;
+  categoryName: string;
+  categoryCode: string;
+  parentId: string;
+  level: number;
+  sortOrder: number;
+  remark: string;
+  questionCount: number;
+  children?: CategoryOption[];
+}
+
 export interface OptionsData {
   roles?: Record<string, string>;
-  categories?: Record<string, string>;
+  categories?: CategoryOption[];
   departments?: Record<string, string>;
 }
 
