@@ -22,7 +22,7 @@ interface AvailableExam {
   totalScore: number;
   duration: number;
   status: string;
-  userCategory?: string; // 人员类别
+  userCategories?: string[]; // 人员类别（多选）
 }
 
 const ExamList: React.FC<ExamListProps> = ({ user, onStartExam }) => {
@@ -232,9 +232,11 @@ const ExamList: React.FC<ExamListProps> = ({ user, onStartExam }) => {
               <p className="text-gray-600 text-sm mb-4">{exam.categoryName}</p>
             
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-600">人员类别：</span>
-                <span className="font-medium text-blue-600">{exam.userCategory || '指挥管理军官'}</span>
+              <div className="flex">
+                <span className="text-gray-600 whitespace-nowrap">人员类别：</span>
+                <span className="font-medium text-blue-600 ml-2 break-words">
+                  {exam.userCategories || '指挥管理军官'}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">考试时长：</span>

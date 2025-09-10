@@ -59,9 +59,11 @@ const PreviewExamPaperDialog: React.FC<PreviewExamPaperDialogProps> = ({ open, o
                 <span className="text-gray-600">题目分类：</span>
                 <span>{paper.categoryName}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">人员类别：</span>
-                <span className="text-blue-600 font-medium">{paper.userCategory || '指挥管理军官'}</span>
+              <div className="flex">
+                <span className="text-gray-600 whitespace-nowrap">人员类别：</span>
+                <span className="text-blue-600 font-medium ml-2 break-words">
+                  {paper.userCategories || '指挥管理军官'}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">时长：</span>
@@ -109,12 +111,14 @@ const PreviewExamPaperDialog: React.FC<PreviewExamPaperDialogProps> = ({ open, o
                         {q.questionOrder}. {q.questionContent}
                         {q.questionType === 'choice' ? (
                           <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">选择题 - {q.score}分</span>
+                        ) : q.questionType === 'multi' ? (
+                          <span className="ml-2 text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">多选题 - {q.score}分</span>
                         ) : (
                           <span className="ml-2 text-xs bg-green-100 text-green-800 px-2 py-1 rounded">判断题 - {q.score}分</span>
                         )}
                       </p>
-                      {/* 选择题显示选项 */}
-                      {q.questionType === 'choice' && q.options && (
+                      {/* 选择题和多选题显示选项 */}
+                      {(q.questionType === 'choice' || q.questionType === 'multi') && q.options && (
                         <div className="mt-2 text-sm text-gray-600">
                           {q.options.map((option: string, i: number) => (
                             <p key={i} className="ml-4">

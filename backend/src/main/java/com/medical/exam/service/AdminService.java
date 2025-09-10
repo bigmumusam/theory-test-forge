@@ -99,7 +99,7 @@ public class AdminService {
                 select count(record_id) as examCount,
                  count(distinct (user_id)) as participantCount,
                  avg(score) avgScore,
-                 sum(case when score >= 60 then 1 else 0 end)/count(record_id) as pass_count
+                 sum(case when score >= pass_score then 1 else 0 end) as pass_count
                  from exam_record where status='completed';
                 """;
         Row row = Db.selectOneBySql( sql);
@@ -383,10 +383,15 @@ public class AdminService {
     public String importQuestions(MultipartFile file) {
         CustomToken customToken = JwtAccessContext.getLoginInfo();
         List<ExamQuestion> examQuestions = new ArrayList<>();
+        int totalProcessed = 0;
+        int duplicateCount = 0;
+        int successCount = 0;
+        
         try {
             ExcelReader reader = ExcelUtil.getReader(file.getInputStream());
             List<Map<String, Object>> readAll = reader.readAll();
             for (Map<String, Object> row : readAll) {
+                totalProcessed++;
                 Object categoryNameObj = row.get("题目所属分类");
                 Object questionTypeObj = row.get("题型");
                 Object questionContentObj = row.get("题干");
@@ -410,12 +415,13 @@ public class AdminService {
                         );
                 if (count>0) {
                     log.info("题目:{}已存在",questionContent);
+                    duplicateCount++;
                     continue;
                 }
                 examQuestions.add(ExamQuestion.builder()
                         .questionType(getQuestionTypeIdByName(questionType))
                         .questionContent(questionContent)
-                        .questionOptions(questionOptionsObj==null ? null :"[" + questionOptionsObj + "]")
+                        .questionOptions(questionOptionsObj==null ? null : convertOldFormatOptionsToJson(questionOptionsObj.toString()))
                         .correctAnswer(correctAnswer)
                         .categoryId(examCategoryMapper.selectOneByQuery(QueryWrapper.create()
                                 .where(EXAM_CATEGORY.CATEGORY_NAME.eq(categoryName))).getCategoryId())
@@ -424,18 +430,264 @@ public class AdminService {
                         .createBy(customToken.getUserName())
                         .build());
             }
-            examQuestionMapper.insertBatch(examQuestions);
+            
+            // 只有当有题目需要插入时才执行插入操作
+            if (!examQuestions.isEmpty()) {
+                examQuestionMapper.insertBatch(examQuestions);
+                successCount = examQuestions.size();
+            }
         }catch (Exception e){
             log.error("导入题目错误:",e);
             throw new CustomException("导入题目错误:"+e.getMessage());
         }
-        String message =  "成功导入题目"+examQuestions.size()+"条";
+        
+        // 生成详细的导入结果消息
+        String message = String.format("导入完成！共处理%d条题目，成功导入%d条，重复%d条", 
+                totalProcessed, successCount, duplicateCount);
+        
         sysLogMapper.insert(SysLog.builder()
                 .userId(customToken.getUserId())
                 .userName(customToken.getUserName())
                 .content(message)
                 .build());
         return message;
+    }
+
+    public String importQuestionsNew(MultipartFile file) {
+        CustomToken customToken = JwtAccessContext.getLoginInfo();
+        List<ExamQuestion> examQuestions = new ArrayList<>();
+        int totalProcessed = 0;
+        int duplicateCount = 0;
+        int successCount = 0;
+        
+        try {
+            ExcelReader reader = ExcelUtil.getReader(file.getInputStream());
+            
+            // 处理选择题sheet
+            reader.setSheet(0); // 切换到第一个sheet
+            List<Map<String, Object>> choiceQuestions = reader.readAll();
+            for (Map<String, Object> row : choiceQuestions) {
+                totalProcessed++;
+                Object categoryNameObj = row.get("题目所属分类");
+                Object questionContentObj = row.get("题干");
+                Object optionAObj = row.get("选项A");
+                Object optionBObj = row.get("选项B");
+                Object optionCObj = row.get("选项C");
+                Object optionDObj = row.get("选项D");
+                Object optionEObj = row.get("选项E");
+                Object optionFObj = row.get("选项F");
+                Object correctAnswerObj = row.get("正确答案");
+
+                if (categoryNameObj == null || questionContentObj == null || correctAnswerObj == null) {
+                    continue; // 忽略该条数据
+                }
+                
+                String categoryName = categoryNameObj.toString().trim();
+                String questionContent = questionContentObj.toString().trim();
+                String correctAnswer = correctAnswerObj.toString().trim();
+
+                // 构建选项数组
+                List<String> options = new ArrayList<>();
+                if (optionAObj != null && !optionAObj.toString().trim().isEmpty()) {
+                    options.add(optionAObj.toString().trim());
+                }
+                if (optionBObj != null && !optionBObj.toString().trim().isEmpty()) {
+                    options.add(optionBObj.toString().trim());
+                }
+                if (optionCObj != null && !optionCObj.toString().trim().isEmpty()) {
+                    options.add(optionCObj.toString().trim());
+                }
+                if (optionDObj != null && !optionDObj.toString().trim().isEmpty()) {
+                    options.add(optionDObj.toString().trim());
+                }
+                if (optionEObj != null && !optionEObj.toString().trim().isEmpty()) {
+                    options.add(optionEObj.toString().trim());
+                }
+                if (optionFObj != null && !optionFObj.toString().trim().isEmpty()) {
+                    options.add(optionFObj.toString().trim());
+                }
+
+                // 转换正确答案格式：abcdef -> 0,1,2,3,4,5
+                String convertedAnswer = convertAnswerFormat(correctAnswer, options.size());
+                
+                // 根据原始答案长度判断是单选还是多选
+                String questionType = (correctAnswer != null && correctAnswer.trim().length() > 1) ? "multi" : "choice";
+
+                // 检查题目是否已存在
+                long count = examQuestionMapper.selectCountByQuery(QueryWrapper.create()
+                        .innerJoin(EXAM_CATEGORY).on(EXAM_QUESTION.CATEGORY_ID.eq(EXAM_CATEGORY.CATEGORY_ID))
+                        .where(EXAM_CATEGORY.CATEGORY_NAME.eq(categoryName))
+                        .and(EXAM_QUESTION.QUESTION_CONTENT.eq(questionContent))
+                );
+                if (count > 0) {
+                    log.info("题目:{}已存在", questionContent);
+                    duplicateCount++;
+                    continue;
+                }
+
+                examQuestions.add(ExamQuestion.builder()
+                        .questionType(questionType) // 根据答案长度判断单选或多选
+                        .questionContent(questionContent)
+                        .questionOptions(convertOptionsToJson(options))
+                        .correctAnswer(convertedAnswer)
+                        .categoryId(examCategoryMapper.selectOneByQuery(QueryWrapper.create()
+                                .where(EXAM_CATEGORY.CATEGORY_NAME.eq(categoryName))).getCategoryId())
+                        .difficulty("easy")
+                        .status("1")
+                        .score(2) // 默认分数2分
+                        .createBy(customToken.getUserName())
+                        .build());
+            }
+
+            // 处理判断题sheet
+            reader.setSheet(1); // 切换到第二个sheet
+            List<Map<String, Object>> judgmentQuestions = reader.readAll();
+            for (Map<String, Object> row : judgmentQuestions) {
+                totalProcessed++;
+                Object categoryNameObj = row.get("题目所属分类");
+                Object questionContentObj = row.get("题干");
+                Object correctAnswerObj = row.get("正确答案");
+
+                if (categoryNameObj == null || questionContentObj == null || correctAnswerObj == null) {
+                    continue; // 忽略该条数据
+                }
+                
+                String categoryName = categoryNameObj.toString().trim();
+                String questionContent = questionContentObj.toString().trim();
+                String correctAnswer = correctAnswerObj.toString().trim();
+
+                // 判断题答案不转换，直接使用原始答案
+
+                // 检查题目是否已存在
+                long count = examQuestionMapper.selectCountByQuery(QueryWrapper.create()
+                        .innerJoin(EXAM_CATEGORY).on(EXAM_QUESTION.CATEGORY_ID.eq(EXAM_CATEGORY.CATEGORY_ID))
+                        .where(EXAM_CATEGORY.CATEGORY_NAME.eq(categoryName))
+                        .and(EXAM_QUESTION.QUESTION_CONTENT.eq(questionContent))
+                );
+                if (count > 0) {
+                    log.info("题目:{}已存在", questionContent);
+                    duplicateCount++;
+                    continue;
+                }
+
+                examQuestions.add(ExamQuestion.builder()
+                        .questionType("judgment") // 判断题
+                        .questionContent(questionContent)
+                        .questionOptions("[\"正确\",\"错误\"]") // 判断题固定选项
+                        .correctAnswer(correctAnswer) // 直接使用原始答案
+                        .categoryId(examCategoryMapper.selectOneByQuery(QueryWrapper.create()
+                                .where(EXAM_CATEGORY.CATEGORY_NAME.eq(categoryName))).getCategoryId())
+                        .difficulty("easy")
+                        .status("1")
+                        .score(2) // 默认分数2分
+                        .createBy(customToken.getUserName())
+                        .build());
+            }
+
+            // 只有当有题目需要插入时才执行插入操作
+            if (!examQuestions.isEmpty()) {
+                examQuestionMapper.insertBatch(examQuestions);
+                successCount = examQuestions.size();
+            }
+        } catch (Exception e) {
+            log.error("导入题目错误:", e);
+            throw new CustomException("导入题目错误:" + e.getMessage());
+        }
+        
+        // 生成详细的导入结果消息
+        String message = String.format("导入完成！共处理%d条题目，成功导入%d条，重复%d条", 
+                totalProcessed, successCount, duplicateCount);
+        
+        sysLogMapper.insert(SysLog.builder()
+                .userId(customToken.getUserId())
+                .userName(customToken.getUserName())
+                .content(message)
+                .build());
+        return message;
+    }
+
+    /**
+     * 转换选择题答案格式：abcdef -> 0,1,2,3,4,5
+     */
+    private String convertAnswerFormat(String answer, int optionCount) {
+        if (answer == null || answer.trim().isEmpty()) {
+            return "";
+        }
+        
+        StringBuilder result = new StringBuilder();
+        String upperAnswer = answer.toUpperCase();
+        
+        for (int i = 0; i < upperAnswer.length(); i++) {
+            char c = upperAnswer.charAt(i);
+            int index = c - 'A';
+            if (index >= 0 && index < optionCount) {
+                if (result.length() > 0) {
+                    result.append(",");
+                }
+                result.append(index);
+            }
+        }
+        
+        return result.toString();
+    }
+
+
+    /**
+     * 将选项列表转换为JSON格式
+     */
+    private String convertOptionsToJson(List<String> options) {
+        if (options == null || options.isEmpty()) {
+            return "[]";
+        }
+        
+        StringBuilder json = new StringBuilder("[");
+        for (int i = 0; i < options.size(); i++) {
+            if (i > 0) {
+                json.append(",");
+            }
+            // 转义JSON特殊字符
+            String escapedOption = options.get(i)
+                .replace("\\", "\\\\")  // 反斜杠
+                .replace("\"", "\\\"")  // 双引号
+                .replace("\n", "\\n")   // 换行符
+                .replace("\r", "\\r")   // 回车符
+                .replace("\t", "\\t");  // 制表符
+            json.append("\"").append(escapedOption).append("\"");
+        }
+        json.append("]");
+        
+        return json.toString();
+    }
+
+    /**
+     * 将老格式的选项字符串转换为JSON格式
+     * 老格式：选项A,选项B,选项C,选项D
+     */
+    private String convertOldFormatOptionsToJson(String optionsString) {
+        if (optionsString == null || optionsString.trim().isEmpty()) {
+            return "[]";
+        }
+        
+        // 按逗号分割选项
+        String[] options = optionsString.split(",");
+        StringBuilder json = new StringBuilder("[");
+        
+        for (int i = 0; i < options.length; i++) {
+            if (i > 0) {
+                json.append(",");
+            }
+            // 转义JSON特殊字符
+            String escapedOption = options[i].trim()
+                .replace("\\", "\\\\")  // 反斜杠
+                .replace("\"", "\\\"")  // 双引号
+                .replace("\n", "\\n")   // 换行符
+                .replace("\r", "\\r")   // 回车符
+                .replace("\t", "\\t");  // 制表符
+            json.append("\"").append(escapedOption).append("\"");
+        }
+        json.append("]");
+        
+        return json.toString();
     }
 
     public void batchDeleteQuestions(Map<String, Object> request) {
@@ -800,7 +1052,7 @@ public class AdminService {
                 EXAM_PAPER.UPDATE_BY,
                 EXAM_PAPER.UPDATE_TIME,
                 EXAM_PAPER.REMARK,
-                EXAM_CONFIG.USER_CATEGORY
+                EXAM_CONFIG.USER_CATEGORY.as("userCategories")
             )
             .from(EXAM_PAPER)
             .leftJoin(EXAM_CATEGORY).on(EXAM_PAPER.CATEGORY_ID.eq(EXAM_CATEGORY.CATEGORY_ID))
@@ -833,10 +1085,44 @@ public class AdminService {
     }
 
     public List<ExamQuestion> getGeneratedPaperDetail(String paperId) {
-        List<Object> questionIds = examPaperQuestionMapper.selectObjectListByQuery(QueryWrapper.create()
-                .select(EXAM_PAPER_QUESTION.QUESTION_ID)
-                .where(EXAM_PAPER_QUESTION.PAPER_ID.eq(paperId)));
-        return examQuestionMapper.selectListByQuery(QueryWrapper.create().where(EXAM_QUESTION.QUESTION_ID.in(questionIds)));
+        // 1. 根据试卷ID查询试卷题目关联表中的所有题目ID和分数
+        List<ExamPaperQuestion> paperQuestions = examPaperQuestionMapper.selectListByQuery(
+            QueryWrapper.create()
+                .where(EXAM_PAPER_QUESTION.PAPER_ID.eq(paperId))
+                .orderBy(EXAM_PAPER_QUESTION.QUESTION_ORDER.asc())
+        );
+        
+        if (paperQuestions == null || paperQuestions.isEmpty()) {
+            return new ArrayList<>();
+        }
+        
+        // 2. 获取题目ID列表
+        List<String> questionIds = paperQuestions.stream()
+                .map(ExamPaperQuestion::getQuestionId)
+                .collect(Collectors.toList());
+        
+        // 3. 根据题目ID查询完整的题目信息
+        List<ExamQuestion> questions = examQuestionMapper.selectListByQuery(
+            QueryWrapper.create()
+                .where(EXAM_QUESTION.QUESTION_ID.in(questionIds))
+                .and(EXAM_QUESTION.STATUS.eq("1")) // 只查询有效的题目
+        );
+        
+        // 4. 为每个题目设置分数（从试卷题目关联表中获取）
+        Map<String, Integer> questionScoreMap = paperQuestions.stream()
+                .collect(Collectors.toMap(
+                    ExamPaperQuestion::getQuestionId,
+                    ExamPaperQuestion::getQuestionScore
+                ));
+        
+        questions.forEach(question -> {
+            Integer score = questionScoreMap.get(question.getQuestionId());
+            if (score != null) {
+                question.setScore(score);
+            }
+        });
+        
+        return questions;
     }
 
     public void updateGeneratedPaper(ExamPaperDTO examPaperDTO) {
@@ -879,13 +1165,15 @@ public class AdminService {
             return new ArrayList<>();
         }
         
-        // 查出所有试卷，并根据人员类别进行过滤
+        // 查出所有试卷，并根据人员类别进行过滤（支持多选）
         List<ExamPaper> papers = examPaperMapper.selectListByQuery(QueryWrapper.create()
-                .select(EXAM_PAPER.ALL_COLUMNS, EXAM_CONFIG.USER_CATEGORY)
+                .select(EXAM_PAPER.ALL_COLUMNS, EXAM_CONFIG.USER_CATEGORY.as("userCategories"))
                 .from(EXAM_PAPER)
                 .leftJoin(EXAM_CONFIG).on(EXAM_PAPER.CONFIG_ID.eq(EXAM_CONFIG.CONFIG_ID))
                 .where(EXAM_PAPER.STATUS.eq("1"))
-                .and(EXAM_CONFIG.USER_CATEGORY.eq(currentUser.getUserCategory())));
+                .and(EXAM_CONFIG.USER_CATEGORY.like(currentUser.getUserCategory())));
+        
+        // 注意：userCategories 字段现在通过 ExamPaperVo 传递，不需要在 ExamPaper 实体中设置
         
         //查出所有参加考试的记录（包括重考记录）
         List<ExamRecord> records = examRecordMapper.selectListByQuery(QueryWrapper.create()
@@ -1150,10 +1438,11 @@ public class AdminService {
             throw new RuntimeException("考试配置不存在");
         }
         
-        // 3. 统计该人员类别下的总用户数
+        // 3. 统计该人员类别下的总用户数（支持多选）
+        String[] allowedCategories = config.getUserCategory().split(",");
         Long totalUsers = sysUserMapper.selectCountByQuery(
             QueryWrapper.create()
-                .where(SYS_USER.USER_CATEGORY.eq(config.getUserCategory()))
+                .where(SYS_USER.USER_CATEGORY.in(allowedCategories))
                 .and(SYS_USER.STATUS.eq("1"))
                 .and(SYS_USER.ROLE.eq("student"))
         );
@@ -1202,10 +1491,10 @@ public class AdminService {
             throw new RuntimeException("考试配置不存在");
         }
         
-        // 2. 获取该人员类别下的所有用户
+        // 2. 获取该人员类别下的所有用户（支持多选）
         List<SysUser> allUsers = sysUserMapper.selectListByQuery(
             QueryWrapper.create()
-                .where(SYS_USER.USER_CATEGORY.eq(config.getUserCategory()))
+                .where(SYS_USER.USER_CATEGORY.in(config.getUserCategory().split(",")))
                 .and(SYS_USER.STATUS.eq("1"))
                 .and(SYS_USER.ROLE.eq("student"))
         );
@@ -1244,6 +1533,7 @@ public class AdminService {
             detail.setUserName(user.getUserName());
             detail.setIdNumber(user.getIdNumber());
             detail.setDepartment(user.getDepartment());
+            detail.setUserCategory(user.getUserCategory());
             
             ExamRecord examRecord = examedUserMap.get(user.getUserId());
             if (examRecord != null) {
@@ -1499,5 +1789,67 @@ public class AdminService {
         }
     }
 
+    /**
+     * 导出试卷人员列表到Excel
+     * @param paperId 试卷ID
+     * @param response HTTP响应
+     */
+    public void exportPaperPersonnelList(String paperId, HttpServletResponse response) {
+        ExcelWriter writer = null;
+        try {
+            // 获取人员列表数据
+            List<PaperExamDetailVo> personnelList = getPaperExamDetail(paperId);
+            
+            // 生成带时间戳的英文文件名
+            String timestamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(new java.util.Date());
+            String filename = "personnel_list_" + paperId + "_" + timestamp + ".xlsx";
+            
+            // 设置响应头，确保Windows环境下的编码兼容性
+            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8");
+            response.setCharacterEncoding("UTF-8");
+            // Windows环境下使用URL编码处理中文文件名
+            String encodedFilename = java.net.URLEncoder.encode(filename, "UTF-8");
+            response.setHeader("Content-Disposition", "attachment;filename*=UTF-8''" + encodedFilename);
+            
+            // 创建ExcelWriter，指定为xlsx格式
+            writer = ExcelUtil.getWriter(true);
+            
+            // 设置表头 - 根据PaperExamDetailVo的实际字段，移除userId和status
+            writer.addHeaderAlias("userName", "姓名");
+            writer.addHeaderAlias("idNumber", "身份证号");
+            writer.addHeaderAlias("department", "部门");
+            writer.addHeaderAlias("userCategory", "人员类别");
+            writer.addHeaderAlias("examStatus", "考试状态");
+            writer.addHeaderAlias("examDate", "考试日期");
+            writer.addHeaderAlias("score", "分数");
+            
+            // 排除不需要导出的字段
+            writer.setOnlyAlias(true);
+            
+            // 写入数据
+            writer.write(personnelList, true);
+            
+            // 自适应列宽
+            writer.autoSizeColumnAll();
+            
+            // 将Excel文件写入响应流
+            writer.flush(response.getOutputStream());
+            
+            log.info("人员列表导出成功，共导出{}条记录", personnelList.size());
+            
+        } catch (Exception e) {
+            log.error("导出人员列表失败", e);
+            throw new CustomException("导出人员列表失败: " + e.getMessage());
+        } finally {
+            // 确保资源被正确关闭
+            if (writer != null) {
+                try {
+                    writer.close();
+                } catch (Exception e) {
+                    log.error("关闭ExcelWriter失败", e);
+                }
+            }
+        }
+    }
 
 }

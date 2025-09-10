@@ -712,15 +712,38 @@ const ExamResults: React.FC = () => {
                                       isUserSelected = userAnswer === opt;
                                     } else {
                                       // 选择题：比较数字索引
-                                      const correctIndexes = Array.isArray(ans.correctAnswer) ? ans.correctAnswer : [ans.correctAnswer];
-                                      const userIndexes = Array.isArray(ans.userAnswer) ? ans.userAnswer : [ans.userAnswer];
+                                      let correctIndexes: number[] = [];
+                                      let userIndexes: number[] = [];
                                       
-                                      // 确保数据类型一致，转换为数字进行比较
-                                      const correctIndexesNum = correctIndexes.map((idx: any) => Number(idx));
-                                      const userIndexesNum = userIndexes.map((idx: any) => Number(idx));
+                                      // 处理正确答案
+                                      if (Array.isArray(ans.correctAnswer)) {
+                                        correctIndexes = ans.correctAnswer.map((idx: any) => Number(idx));
+                                      } else if (typeof ans.correctAnswer === 'string') {
+                                        // 支持多选格式 "0,1,2,3,4,5"
+                                        if (ans.correctAnswer.includes(',')) {
+                                          correctIndexes = ans.correctAnswer.split(',').map((s: string) => Number(s.trim()));
+                                        } else {
+                                          correctIndexes = [Number(ans.correctAnswer)];
+                                        }
+                                      } else {
+                                        correctIndexes = [Number(ans.correctAnswer)];
+                                      }
                                       
-                                      isCorrect = correctIndexesNum.includes(i);
-                                      isUserSelected = userIndexesNum.includes(i);
+                                      // 处理用户答案
+                                      if (Array.isArray(ans.userAnswer)) {
+                                        userIndexes = ans.userAnswer.map((idx: any) => Number(idx));
+                                      } else if (typeof ans.userAnswer === 'string') {
+                                        if (ans.userAnswer.includes(',')) {
+                                          userIndexes = ans.userAnswer.split(',').map((s: string) => Number(s.trim()));
+                                        } else {
+                                          userIndexes = [Number(ans.userAnswer)];
+                                        }
+                                      } else {
+                                        userIndexes = [Number(ans.userAnswer)];
+                                      }
+                                      
+                                      isCorrect = correctIndexes.includes(i);
+                                      isUserSelected = userIndexes.includes(i);
                                     }
                                     let highlightClass = '';
                                     if (isCorrect && isUserSelected) {

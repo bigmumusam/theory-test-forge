@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -39,9 +39,9 @@ const ExamPaperGenerator: React.FC<ExamPaperGeneratorProps> = ({ isOpen, onClose
   const [paperName, setPaperName] = useState('');
   const [step, setStep] = useState<'preview' | 'confirm'>('preview');
   const [loading, setLoading] = useState(false);
-  const [allQuestions, setAllQuestions] = useState<{ choice: any[]; judgment: any[] }>({ choice: [], judgment: [] });
-  const [selectedQuestions, setSelectedQuestions] = useState<{ choice: any[]; judgment: any[] }>({ choice: [], judgment: [] });
-  const [replaceType, setReplaceType] = useState<'choice' | 'judgment' | null>(null);
+  const [allQuestions, setAllQuestions] = useState<{ choice: any[]; multi: any[]; judgment: any[] }>({ choice: [], multi: [], judgment: [] });
+  const [selectedQuestions, setSelectedQuestions] = useState<{ choice: any[]; multi: any[]; judgment: any[] }>({ choice: [], multi: [], judgment: [] });
+  const [replaceType, setReplaceType] = useState<'choice' | 'multi' | 'judgment' | null>(null);
   const [replaceIndex, setReplaceIndex] = useState<number | null>(null);
 
   useEffect(() => {
@@ -49,8 +49,8 @@ const ExamPaperGenerator: React.FC<ExamPaperGeneratorProps> = ({ isOpen, onClose
       setPaperName('');
       setStep('preview');
       setLoading(false);
-      setAllQuestions({ choice: [], judgment: [] });
-      setSelectedQuestions({ choice: [], judgment: [] });
+      setAllQuestions({ choice: [], multi: [], judgment: [] });
+      setSelectedQuestions({ choice: [], multi: [], judgment: [] });
       setReplaceType(null);
       setReplaceIndex(null);
     }
@@ -85,11 +85,19 @@ const ExamPaperGenerator: React.FC<ExamPaperGeneratorProps> = ({ isOpen, onClose
       });
       const all = {
         choice: res.data.filter((q: any) => q.questionType === 'choice'),
+        multi: res.data.filter((q: any) => q.questionType === 'multi'),
         judgment: res.data.filter((q: any) => q.questionType === 'judgment')
       };
+      
+      // 调试信息
+      console.log('题库数据:', res.data);
+      console.log('过滤后的题目:', all);
+      console.log('配置中的多选题数量:', config.questionTypes.multi.count);
+      
       setAllQuestions(all);
       setSelectedQuestions({
         choice: getRandomItems(all.choice, config.questionTypes.choice.count),
+        multi: getRandomItems(all.multi, config.questionTypes.multi.count),
         judgment: getRandomItems(all.judgment, config.questionTypes.judgment.count)
       });
       setStep('confirm');
@@ -106,7 +114,7 @@ const ExamPaperGenerator: React.FC<ExamPaperGeneratorProps> = ({ isOpen, onClose
   }
 
   // 替换题目
-  const handleReplace = (type: 'choice' | 'judgment', idx: number) => {
+  const handleReplace = (type: 'choice' | 'multi' | 'judgment', idx: number) => {
     setReplaceType(type);
     setReplaceIndex(idx);
   };
@@ -131,9 +139,14 @@ const ExamPaperGenerator: React.FC<ExamPaperGeneratorProps> = ({ isOpen, onClose
           questionOrder: i + 1,
           score: config.questionTypes.choice.score
         })),
-        ...selectedQuestions.judgment.map((q, i) => ({
+        ...selectedQuestions.multi.map((q, i) => ({
           questionId: q.questionId,
           questionOrder: selectedQuestions.choice.length + i + 1,
+          score: config.questionTypes.multi.score
+        })),
+        ...selectedQuestions.judgment.map((q, i) => ({
+          questionId: q.questionId,
+          questionOrder: selectedQuestions.choice.length + selectedQuestions.multi.length + i + 1,
           score: config.questionTypes.judgment.score
         }))
       ];
@@ -155,8 +168,8 @@ const ExamPaperGenerator: React.FC<ExamPaperGeneratorProps> = ({ isOpen, onClose
         setPaperName('');
         setStep('preview');
         setLoading(false);
-        setAllQuestions({ choice: [], judgment: [] });
-        setSelectedQuestions({ choice: [], judgment: [] });
+        setAllQuestions({ choice: [], multi: [], judgment: [] });
+        setSelectedQuestions({ choice: [], multi: [], judgment: [] });
         setReplaceType(null);
         setReplaceIndex(null);
         onClose();
@@ -177,6 +190,9 @@ const ExamPaperGenerator: React.FC<ExamPaperGeneratorProps> = ({ isOpen, onClose
       <DialogContent className="max-w-[66vw] h-[66vh] max-h-[66vh] overflow-y-auto flex flex-col justify-between">
         <DialogHeader>
           <DialogTitle>生成试卷 - {config.name}</DialogTitle>
+          <DialogDescription>
+            根据考试配置生成试卷，可以预览和调整题目
+          </DialogDescription>
         </DialogHeader>
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
           {/* 配置信息 */}
@@ -191,9 +207,13 @@ const ExamPaperGenerator: React.FC<ExamPaperGeneratorProps> = ({ isOpen, onClose
                 <span className="text-gray-600">题目分类：</span>
                 <span>{getCategoryNameById(options?.categories, config.categories[0]) || config.categories[0]}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">人员类别：</span>
-                <span className="text-blue-600 font-medium">{config.userCategory || '指挥管理军官'}</span>
+              <div className="flex">
+                <span className="text-gray-600 whitespace-nowrap">人员类别：</span>
+                <span className="text-blue-600 font-medium ml-2 break-words">
+                  {Array.isArray(config.userCategories) 
+                    ? config.userCategories.join(', ') 
+                    : config.userCategories || '指挥管理军官'}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">时长：</span>
@@ -202,6 +222,10 @@ const ExamPaperGenerator: React.FC<ExamPaperGeneratorProps> = ({ isOpen, onClose
               <div className="flex justify-between">
                 <span className="text-gray-600">选择题：</span>
                 <span>{config.questionTypes.choice.count}题 × {config.questionTypes.choice.score}分</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">多选题：</span>
+                <span>{config.questionTypes.multi.count}题 × {config.questionTypes.multi.score}分</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">判断题：</span>
@@ -277,11 +301,35 @@ const ExamPaperGenerator: React.FC<ExamPaperGeneratorProps> = ({ isOpen, onClose
                             </Button>
                           </div>
                     ))}
-                    {selectedQuestions.judgment.map((q, idx) => (
+                    {selectedQuestions.multi.map((q, idx) => (
                       <div key={q.questionId} className="border border-gray-200 rounded p-3 flex items-start justify-between">
                         <div className="flex-1">
                           <p className="font-medium text-sm">
                             {selectedQuestions.choice.length + idx + 1}. {q.questionContent || q.content}
+                            <span className="ml-2 text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">
+                              多选题 - {config.questionTypes.multi.score}分
+                            </span>
+                          </p>
+                          {q.options && (
+                            <div className="mt-2 text-sm text-gray-600">
+                              {q.options.map((option: string, i: number) => (
+                                <p key={i} className="ml-4">
+                                  {String.fromCharCode(65 + i)}. {option}
+                                </p>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <Button size="sm" variant="outline" onClick={() => handleReplace('multi', idx)}>
+                          <RefreshCw className="w-4 h-4" /> 替换
+                        </Button>
+                      </div>
+                    ))}
+                    {selectedQuestions.judgment.map((q, idx) => (
+                      <div key={q.questionId} className="border border-gray-200 rounded p-3 flex items-start justify-between">
+                        <div className="flex-1">
+                          <p className="font-medium text-sm">
+                            {selectedQuestions.choice.length + selectedQuestions.multi.length + idx + 1}. {q.questionContent || q.content}
                             <span className="ml-2 text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
                               判断题 - {config.questionTypes.judgment.score}分
                             </span>

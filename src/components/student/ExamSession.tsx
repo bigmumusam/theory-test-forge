@@ -33,9 +33,18 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
     let correctAnswer = q.correctAnswer;
     // 兼容后端字段为 questionType 或 type
     const qType = (q as any).questionType || q.type;
-    if (qType === 'multi' && typeof correctAnswer === 'string') {
-      correctAnswer = correctAnswer.split(',').map((s: string) => Number(s));
+    
+    // 处理多选格式的正确答案（支持 choice 和 multi 类型）
+    if ((qType === 'multi' || qType === 'choice') && typeof correctAnswer === 'string') {
+      if (correctAnswer.includes(',')) {
+        // 多选格式 "0,1,2,3,4,5"
+        correctAnswer = correctAnswer.split(',').map((s: string) => Number(s.trim()));
+      } else {
+        // 单选格式，转换为数字
+        correctAnswer = Number(correctAnswer);
+      }
     }
+    
     return {
       ...q,
       type: qType,
@@ -383,7 +392,7 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
                 <div className="flex items-center space-x-3">
                   <span className={`px-3 py-1 text-sm rounded ${
                     currentQuestion.type === 'choice' ? 'bg-blue-100 text-blue-800' :
-                    currentQuestion.type === 'multi' ? 'bg-yellow-100 text-yellow-800' :
+                    currentQuestion.type === 'multi' ? 'bg-purple-100 text-purple-800' :
                     'bg-green-100 text-green-800'
                   }`}>
                     {currentQuestion.type === 'choice' ? '选择题' :

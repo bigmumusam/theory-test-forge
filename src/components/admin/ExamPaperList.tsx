@@ -166,6 +166,14 @@ const ExamPaperList: React.FC = () => {
     }));
   };
 
+  // 处理分页变化
+  const handlePageChange = (page: number) => {
+    setFilters(prev => ({
+      ...prev,
+      pageNumber: page
+    }));
+  };
+
   // 处理搜索
   const handleSearch = () => {
     setFilters(prev => ({
@@ -273,6 +281,76 @@ const ExamPaperList: React.FC = () => {
     }
   };
 
+  // 下载人员列表
+  const handleDownloadPersonnelList = async () => {
+    if (!examStatusData?.paperId) {
+      toast({
+        title: '下载失败',
+        description: '没有可下载的数据',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    try {
+      // 调用后端导出API
+      const response = await fetch(`${import.meta.env.VITE_API_BASE}/admin/paper-personnel-export`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ paperId: examStatusData.paperId })
+      });
+
+      if (!response.ok) {
+        throw new Error('导出失败');
+      }
+
+      // 获取文件名
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = 'personnel_list.xlsx';
+      if (contentDisposition) {
+        // 支持多种文件名格式
+        let filenameMatch = contentDisposition.match(/filename\*=UTF-8''(.+)/);
+        if (filenameMatch) {
+          filename = decodeURIComponent(filenameMatch[1]);
+        } else {
+          filenameMatch = contentDisposition.match(/filename=(.+)/);
+          if (filenameMatch) {
+            filename = filenameMatch[1];
+          }
+        }
+      }
+
+      // 获取文件内容
+      const blob = await response.blob();
+      
+      // 创建下载链接
+      const link = document.createElement('a');
+      const url = window.URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', filename);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: "导出成功",
+        description: "人员列表已导出到Excel文件"
+      });
+    } catch (error) {
+      console.error('导出失败:', error);
+      toast({
+        title: "导出失败",
+        description: "导出人员列表时发生错误，请重试",
+        variant: "destructive"
+      });
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -373,7 +451,7 @@ const ExamPaperList: React.FC = () => {
                       <TableCell>{paper.categoryName || getCategoryNameById(options?.categories, paper.categoryId) || paper.categoryId}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className="bg-blue-50 text-blue-700">
-                          {paper.userCategory || '指挥管理军官'}
+                          {paper.userCategories || '指挥管理军官'}
                         </Badge>
                       </TableCell>
                       <TableCell>{paper.totalQuestions}</TableCell>
@@ -446,7 +524,7 @@ const ExamPaperList: React.FC = () => {
                   <PaginationContent>
                     <PaginationItem>
                       <PaginationPrevious 
-                        onClick={() => handleFilterChange('pageNumber', Math.max(1, currentPage - 1))}
+                        onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
                         className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
                       />
                     </PaginationItem>
@@ -469,7 +547,7 @@ const ExamPaperList: React.FC = () => {
                       return pages.map((page) => (
                         <PaginationItem key={page}>
                           <PaginationLink
-                            onClick={() => handleFilterChange('pageNumber', page)}
+                            onClick={() => handlePageChange(page)}
                             isActive={currentPage === page}
                             className="cursor-pointer"
                           >
@@ -481,7 +559,7 @@ const ExamPaperList: React.FC = () => {
                     
                     <PaginationItem>
                       <PaginationNext 
-                        onClick={() => handleFilterChange('pageNumber', Math.min(totalPages, currentPage + 1))}
+                        onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
                         className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
                       />
                     </PaginationItem>
@@ -510,8 +588,10 @@ const ExamPaperList: React.FC = () => {
                   <div className="text-lg font-semibold text-blue-800">{examStatusData.paperName}</div>
                 </div>
                 <div className="bg-green-50 p-4 rounded-lg">
-                  <div className="text-sm text-green-600">人员类别</div>
-                  <div className="text-lg font-semibold text-green-800">{examStatusData.userCategory}</div>
+                  <div className="text-sm text-green-600 whitespace-nowrap">人员类别</div>
+                  <div className="text-lg font-semibold text-green-800 break-words">
+                    {examStatusData.userCategories || '指挥管理军官'}
+                  </div>
                 </div>
                 <div className="bg-purple-50 p-4 rounded-lg">
                   <div className="text-sm text-purple-600">总人数</div>
@@ -537,7 +617,18 @@ const ExamPaperList: React.FC = () => {
 
               {/* 详细列表 */}
               <div>
-                <h3 className="text-lg font-semibold mb-4">详细情况</h3>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold">详细情况</h3>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={handleDownloadPersonnelList}
+                    className="flex items-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    下载人员列表
+                  </Button>
+                </div>
                 <div className="border rounded-lg overflow-hidden">
                   <Table>
                     <TableHeader>
@@ -545,6 +636,7 @@ const ExamPaperList: React.FC = () => {
                         <TableHead>姓名</TableHead>
                         <TableHead>身份证号</TableHead>
                         <TableHead>部门</TableHead>
+                        <TableHead>人员类别</TableHead>
                         <TableHead>考试状态</TableHead>
                         <TableHead>考试日期</TableHead>
                         <TableHead>分数</TableHead>
@@ -556,6 +648,11 @@ const ExamPaperList: React.FC = () => {
                           <TableCell className="font-medium">{detail.userName}</TableCell>
                           <TableCell className="font-mono text-sm">{detail.idNumber}</TableCell>
                           <TableCell>{detail.department}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                              {detail.userCategory || '指挥管理军官'}
+                            </Badge>
+                          </TableCell>
                           <TableCell>
                             <Badge 
                               variant={detail.examStatus === '已考试' ? 'default' : 'secondary'}

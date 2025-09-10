@@ -10,6 +10,7 @@ import com.medical.exam.entity.ExamConfig;
 import com.medical.exam.entity.ExamPaper;
 import com.medical.exam.entity.ExamForceRetake;
 import com.medical.exam.entity.SysLog;
+import com.medical.exam.entity.SysUser;
 import com.medical.exam.mapper.ExamRecordMapper;
 import com.medical.exam.mapper.ExamAnswerMapper;
 import com.medical.exam.mapper.ExamQuestionMapper;
@@ -17,6 +18,7 @@ import com.medical.exam.mapper.ExamConfigMapper;
 import com.medical.exam.mapper.ExamPaperMapper;
 import com.medical.exam.mapper.ExamForceRetakeMapper;
 import com.medical.exam.mapper.SysLogMapper;
+import com.medical.exam.mapper.SysUserMapper;
 import com.medical.exam.security.JwtAccessContext;
 import com.medical.exam.vo.CustomToken;
 import com.mybatisflex.core.query.QueryWrapper;
@@ -33,6 +35,7 @@ import static com.medical.exam.entity.table.ExamQuestionTableDef.EXAM_QUESTION;
 import static com.medical.exam.entity.table.ExamConfigTableDef.EXAM_CONFIG;
 import static com.medical.exam.entity.table.ExamPaperTableDef.EXAM_PAPER;
 import static com.medical.exam.entity.table.ExamForceRetakeTableDef.EXAM_FORCE_RETAKE;
+import static com.medical.exam.entity.table.SysUserTableDef.SYS_USER;
 
 @Service
 @Slf4j
@@ -57,6 +60,9 @@ public class ExamService {
 
     @Resource
     private SysLogMapper sysLogMapper;
+    
+    @Resource
+    private SysUserMapper sysUserMapper;
 
     @Transactional(rollbackFor = Exception.class)
     public String startExam(StartExamDTO startExamDTO) {
@@ -81,6 +87,28 @@ public class ExamService {
             throw new RuntimeException("考试配置不存在");
         }
         
+        // 验证用户人员类别是否与考试配置匹配
+        SysUser currentUser = sysUserMapper.selectOneByQuery(QueryWrapper.create()
+                .where(SYS_USER.USER_ID.eq(customToken.getUserId())));
+        
+        if (currentUser == null) {
+            throw new RuntimeException("用户信息不存在");
+        }
+        
+        // 检查用户的人员类别是否在考试配置的人员类别范围内
+        String[] allowedCategories = examConfig.getUserCategory().split(",");
+        boolean hasPermission = false;
+        for (String category : allowedCategories) {
+            if (category.trim().equals(currentUser.getUserCategory())) {
+                hasPermission = true;
+                break;
+            }
+        }
+        
+        if (!hasPermission) {
+            throw new RuntimeException("您的人员类别不在该考试的允许范围内，无法参加此考试");
+        }
+        
         String recordId = "";
         if(examRecords.isEmpty()){
             // 检查是否是强制重考
@@ -98,7 +126,7 @@ public class ExamService {
                     .examName(startExamDTO.getExamName())
                     .startTime(new Date())
                     .totalScore(examConfig.getTotalScore()) // 从配置中获取总分
-                    .passScore(startExamDTO.getPassScore() != null ? startExamDTO.getPassScore() : 60) // 默认及格分数60
+                    .passScore(examConfig.getPassScore() != null ? examConfig.getPassScore() : 60) // 使用考试配置中的及格分数
                     .status("in-progress")
                     .retake(forceRetake != null ? 1 : 0) // 如果是强制重考则设置为1，否则为0
                     .build();

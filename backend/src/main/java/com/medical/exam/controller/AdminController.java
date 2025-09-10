@@ -69,6 +69,20 @@ public class AdminController {
         return Result.success(adminService.importQuestions(file));
     }
 
+    @PostMapping("/questions/import-new")
+    public Result<?> importQuestionsNew(@RequestParam("file") MultipartFile file) {
+        if (file.isEmpty()) {
+            return Result.error("请选择文件上传");
+        }
+        // 验证文件类型
+        String originalFilename = file.getOriginalFilename();
+        if (originalFilename == null ||
+                (!originalFilename.endsWith(".xls") && !originalFilename.endsWith(".xlsx"))) {
+            return Result.error("仅支持Excel文件(.xls, .xlsx)");
+        }
+        return Result.success(adminService.importQuestionsNew(file));
+    }
+
     //查询题目
     @PostMapping("/questions/list")
     public Result<?> getQuestions(@RequestBody QuestionQueryDTO request) {
@@ -232,6 +246,13 @@ public class AdminController {
     public Result<?> getPaperExamDetail(@RequestBody Map<String, Object> request) {
         String paperId = request.get("paperId").toString();
         return Result.success(adminService.getPaperExamDetail(paperId));
+    }
+
+    // 导出试卷人员列表
+    @PostMapping("/paper-personnel-export")
+    public void exportPaperPersonnelList(@RequestBody Map<String, Object> request, jakarta.servlet.http.HttpServletResponse response) {
+        String paperId = request.get("paperId").toString();
+        adminService.exportPaperPersonnelList(paperId, response);
     }
 }
 

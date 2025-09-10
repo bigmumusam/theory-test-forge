@@ -208,6 +208,20 @@ const getCategoryNameById = (categories: any[], categoryId: string): string | nu
   return null;
 };
 
+// 解析题目选项的辅助函数
+const parseQuestionOptions = (optionsStr: string): string[] => {
+  try {
+    // 尝试直接解析JSON
+    const result = JSON.parse(optionsStr);
+    console.log('成功解析选项:', result);
+    return result;
+  } catch (error) {
+    console.error('JSON解析失败:', error, '原始数据:', optionsStr);
+    // 返回空数组避免崩溃
+    return [];
+  }
+};
+
 const QuestionBankManager: React.FC = () => {
   const [categories, setCategories] = useState<any[]>([]);
 
@@ -256,6 +270,7 @@ const QuestionBankManager: React.FC = () => {
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [isNewImportOpen, setIsNewImportOpen] = useState(false);
 
   const { toast } = useToast();
 
@@ -538,8 +553,39 @@ const QuestionBankManager: React.FC = () => {
       });
       if (res.code === 200) {
         toast({
-          title: '导入成功',
-          description: res.message || '题目已成功导入',
+          title: res.data || res.message || '导入成功',
+          description: '题目导入完成，请查看题库列表',
+        });
+        fetchQuestions(1);
+      } else {
+        toast({
+          title: '导入失败',
+          description: res.message || '请检查文件格式',
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      toast({
+        title: '导入失败',
+        description: String(error),
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleImportQuestionsNew = async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await request('/admin/questions/import-new', {
+        method: 'POST',
+        body: formData,
+        headers: {}, // 让 fetch 自动设置 multipart/form-data
+      });
+      if (res.code === 200) {
+        toast({
+          title: res.data || res.message || '导入成功',
+          description: '题目导入完成，请查看题库列表',
         });
         fetchQuestions(1);
       } else {
@@ -617,16 +663,13 @@ const QuestionBankManager: React.FC = () => {
       const data = res.data;
       setQuestions((data.records || []).map(q => {
         let correctAnswer = q.correctAnswer;
-        if (q.questionType === 'choice' && typeof correctAnswer === 'string') {
-          correctAnswer = Number(correctAnswer);
-        } else if (q.questionType === 'multi' && typeof correctAnswer === 'string') {
-          correctAnswer = correctAnswer.split(',').map(s => Number(s));
-        }
+        // 对于选择题，保持原始格式，不进行转换
+        // 在显示时再根据需要进行解析
         return {
         id: q.questionId,
         type: q.questionType,
         content: q.questionContent,
-        options: q.questionOptions ? JSON.parse(q.questionOptions) : undefined,
+        options: q.questionOptions ? parseQuestionOptions(q.questionOptions) : undefined,
           correctAnswer,
         category: q.categoryId,
         score: q.score,
@@ -728,6 +771,10 @@ const QuestionBankManager: React.FC = () => {
           <Button variant="outline" onClick={() => setIsImportOpen(true)}>
             <Upload className="w-4 h-4 mr-2" />
             导入题目
+          </Button>
+          <Button variant="outline" onClick={() => setIsNewImportOpen(true)}>
+            <Upload className="w-4 h-4 mr-2" />
+            导入题目（新格式）
           </Button>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
@@ -1057,24 +1104,50 @@ const QuestionBankManager: React.FC = () => {
                       <AccordionContent>
                         {question.type === 'choice' && question.options && (
                           <div className="space-y-2 mt-2">
-                            {question.options.map((option, index) => (
-                              <div key={index} className={`flex items-center space-x-2 p-2 rounded border ${question.correctAnswer === index ? 'bg-green-50 border-green-400 text-green-800 font-bold' : 'bg-gray-50 border-transparent'}`}>
-                                <span className="font-medium">{String.fromCharCode(65 + index)}.</span>
-                                <span>{option}</span>
-                                {question.correctAnswer === index && <span className="text-green-600 text-sm ml-auto font-bold">✓ 正确答案</span>}
-                              </div>
-                            ))}
+                            {question.options.map((option, index) => {
+                              // 解析正确答案，支持单选和多选格式
+                              let isCorrect = false;
+                              if (typeof question.correctAnswer === 'number') {
+                                // 单选格式：数字
+                                isCorrect = question.correctAnswer === index;
+                              } else if (typeof question.correctAnswer === 'string') {
+                                // 字符串格式：可能是单选"0"或多选"0,1,2"
+                                const correctAnswers = question.correctAnswer.split(',').map(s => Number(s.trim()));
+                                isCorrect = correctAnswers.includes(index);
+                              }
+                              
+                              return (
+                                <div key={index} className={`flex items-center space-x-2 p-2 rounded border ${isCorrect ? 'bg-green-50 border-green-400 text-green-800 font-bold' : 'bg-gray-50 border-transparent'}`}>
+                                  <span className="font-medium">{String.fromCharCode(65 + index)}.</span>
+                                  <span>{option}</span>
+                                  {isCorrect && <span className="text-green-600 text-sm ml-auto font-bold">✓ 正确答案</span>}
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                         {question.type === 'multi' && (
                           <div className="flex flex-col gap-2 mt-2">
-                            {question.options?.map((option, index) => (
-                              <div key={index} className={`flex items-center space-x-2 p-2 rounded border ${Array.isArray(question.correctAnswer) && question.correctAnswer.includes(index) ? 'bg-green-50 border-green-400 text-green-800 font-bold' : 'bg-gray-50 border-transparent'}`}>
-                                <span className="font-medium">{String.fromCharCode(65 + index)}.</span>
-                                <span>{option}</span>
-                                {Array.isArray(question.correctAnswer) && question.correctAnswer.includes(index) && <span className="text-green-600 text-sm ml-auto font-bold">✓ 正确答案</span>}
-                              </div>
-                            ))}
+                            {question.options?.map((option, index) => {
+                              // 解析多选题正确答案，支持数组和字符串格式
+                              let isCorrect = false;
+                              if (Array.isArray(question.correctAnswer)) {
+                                // 数组格式
+                                isCorrect = question.correctAnswer.includes(index);
+                              } else if (typeof question.correctAnswer === 'string') {
+                                // 字符串格式：如 "0,3,1,2"
+                                const correctAnswers = question.correctAnswer.split(',').map(s => Number(s.trim()));
+                                isCorrect = correctAnswers.includes(index);
+                              }
+                              
+                              return (
+                                <div key={index} className={`flex items-center space-x-2 p-2 rounded border ${isCorrect ? 'bg-green-50 border-green-400 text-green-800 font-bold' : 'bg-gray-50 border-transparent'}`}>
+                                  <span className="font-medium">{String.fromCharCode(65 + index)}.</span>
+                                  <span>{option}</span>
+                                  {isCorrect && <span className="text-green-600 text-sm ml-auto font-bold">✓ 正确答案</span>}
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                         {question.type === 'judgment' && (
@@ -1321,6 +1394,14 @@ const QuestionBankManager: React.FC = () => {
         title="导入题目"
         onImport={handleImportQuestions}
         templateDownloadUrl="/templates/题目导入模版.xlsx"
+      />
+
+      <ImportDialog
+        isOpen={isNewImportOpen}
+        onClose={() => setIsNewImportOpen(false)}
+        title="导入题目（新格式）"
+        onImport={handleImportQuestionsNew}
+        templateDownloadUrl="/templates/题目导入模版（新）.xlsx"
       />
 
       <Dialog open={!!editingCategory} onOpenChange={(open) => { if (!open) setEditingCategory(null); }}>

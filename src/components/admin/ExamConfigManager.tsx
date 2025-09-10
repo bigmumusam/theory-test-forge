@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { ExamConfig } from '../../types/exam';
@@ -11,8 +12,17 @@ import { request } from '@/lib/request';
 import ExamPaperGenerator from './ExamPaperGenerator';
 import ExamPaperList from './ExamPaperList';
 import { useOptions } from '../../context/OptionsContext';
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, ChevronDown } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+
+// 人员类别选项
+const PERSONNEL_CATEGORIES = [
+  '指挥管理军官',
+  '专业技术军官', 
+  '文职',
+  '军士',
+  '聘用制'
+];
 
 // 递归查找分类名称
 const getCategoryNameById = (categories: any[], categoryId: string): string | null => {
@@ -30,6 +40,120 @@ const getCategoryNameById = (categories: any[], categoryId: string): string | nu
   return null;
 };
 
+// 多选下拉框组件
+interface MultiSelectDropdownProps {
+  options: string[];
+  selectedValues: string[];
+  onSelectionChange: (values: string[]) => void;
+  placeholder?: string;
+  className?: string;
+}
+
+const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
+  options,
+  selectedValues,
+  onSelectionChange,
+  placeholder = "请选择",
+  className = ""
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  // 点击外部关闭下拉框
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  const handleToggle = (value: string) => {
+    if (selectedValues.includes(value)) {
+      onSelectionChange(selectedValues.filter(v => v !== value));
+    } else {
+      onSelectionChange([...selectedValues, value]);
+    }
+  };
+
+  const handleSelectAll = () => {
+    if (selectedValues.length === options.length) {
+      onSelectionChange([]);
+    } else {
+      onSelectionChange([...options]);
+    }
+  };
+
+  const getDisplayText = () => {
+    if (selectedValues.length === 0) {
+      return placeholder;
+    }
+    if (selectedValues.length === options.length) {
+      return "全部人员类别";
+    }
+    if (selectedValues.length <= 2) {
+      return selectedValues.join(', ');
+    }
+    return `已选择 ${selectedValues.length} 项`;
+  };
+
+  return (
+    <div ref={dropdownRef} className={`relative ${className}`}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-3 py-2 border border-gray-300 rounded-md bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+      >
+        <span className={selectedValues.length === 0 ? "text-gray-500" : "text-gray-900"}>
+          {getDisplayText()}
+        </span>
+        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+      
+      {isOpen && (
+        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+          <div className="p-2">
+            <div 
+              className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+              onClick={handleSelectAll}
+            >
+              <Checkbox 
+                checked={selectedValues.length === options.length}
+                className="data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+              />
+              <span className="text-sm font-medium text-gray-700">
+                {selectedValues.length === options.length ? "取消全选" : "全选"}
+              </span>
+            </div>
+            <div className="border-t border-gray-200 my-1"></div>
+            {options.map((option) => (
+              <div 
+                key={option}
+                className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                onClick={() => handleToggle(option)}
+              >
+                <Checkbox 
+                  checked={selectedValues.includes(option)}
+                  className="data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                />
+                <span className="text-sm text-gray-700">{option}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const ExamConfigManager: React.FC = () => {
   const [examConfigs, setExamConfigs] = useState<ExamConfig[]>([]);
   const [loading, setLoading] = useState(false);
@@ -37,14 +161,15 @@ const ExamConfigManager: React.FC = () => {
   const [newConfig, setNewConfig] = useState<Partial<ExamConfig>>({
     name: '',
     categories: [],
-    userCategory: '指挥管理军官',
+    userCategories: ['指挥管理军官'],
     questionTypes: {
       choice: { count: 30, score: 2 },
       multi: { count: 0, score: 4 },
       judgment: { count: 20, score: 2 }
     },
     duration: 90,
-    totalScore: 100
+    totalScore: 100,
+    passScore: 60
   });
 
   const { toast } = useToast();
@@ -106,14 +231,15 @@ const ExamConfigManager: React.FC = () => {
         id: item.configId,
         name: item.configName,
         categories: item.categoryId ? [item.categoryId] : [],
-        userCategory: item.userCategory || '指挥管理军官',
+        userCategories: item.userCategory ? item.userCategory.split(',').map((s: string) => s.trim()) : ['指挥管理军官'],
         questionTypes: {
           choice: { count: item.choiceCount, score: item.choiceScore },
           multi: { count: item.multiCount, score: item.multiScore },
           judgment: { count: item.judgmentCount, score: item.judgmentScore }
         },
         duration: item.duration,
-        totalScore: item.totalScore
+        totalScore: item.totalScore,
+        passScore: item.passScore
       }));
       setExamConfigs(configs);
     } catch (error) {
@@ -223,10 +349,10 @@ const ExamConfigManager: React.FC = () => {
       const body = {
         configName: newConfig.name,
         categoryId: newConfig.categories?.[0],
-        userCategory: newConfig.userCategory,
+        userCategory: newConfig.userCategories?.join(',') || '指挥管理军官',
         duration: newConfig.duration,
         totalScore: calculateTotalScore(newConfig),
-        passScore: 60, // 可根据需要调整
+        passScore: newConfig.passScore || 60,
         choiceCount: newConfig.questionTypes?.choice.count,
         multiCount: newConfig.questionTypes?.multi.count,
         judgmentCount: newConfig.questionTypes?.judgment.count,
@@ -254,7 +380,8 @@ const ExamConfigManager: React.FC = () => {
           judgment: { count: 20, score: 2 }
         },
         duration: 90,
-        totalScore: 100
+        totalScore: 100,
+        passScore: 60
       });
     } catch (error) {
       console.error('创建考试配置失败:', error);
@@ -308,16 +435,16 @@ const ExamConfigManager: React.FC = () => {
         configId: config.id,
         configName: config.name,
         categoryId: config.categories?.[0],
-        userCategory: config.userCategory || '指挥管理军官',
+        userCategory: config.userCategories?.join(',') || '指挥管理军官',
         duration: config.duration,
         totalScore: config.totalScore,
-        passScore: 60, // 可根据需要调整
+        passScore: config.passScore || 60,
         choiceCount: config.questionTypes.choice.count,
         multiCount: config.questionTypes.multi.count,
         judgmentCount: config.questionTypes.judgment.count,
-        choiceScore: 2,
-        multiScore: 4,
-        judgmentScore: 2,
+        choiceScore: config.questionTypes.choice.score,
+        multiScore: config.questionTypes.multi.score,
+        judgmentScore: config.questionTypes.judgment.score,
         remark: '',
       };
       await request('/admin/exam-configs/update', {
@@ -411,7 +538,7 @@ const ExamConfigManager: React.FC = () => {
         </TabsList>
         
         <TabsContent value="configs" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-7 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-6 gap-8">
             {/* 新建配置表单 */}
             <div className="lg:col-span-2 flex flex-col h-full">
               <Card className="p-6 flex-1 flex flex-col h-full min-h-[520px]">
@@ -445,19 +572,14 @@ const ExamConfigManager: React.FC = () => {
                   </Select>
                 </div>
                 <div>
-                  <Label>人员类别</Label>
-                  <Select value={newConfig.userCategory || '指挥管理军官'} onValueChange={(value) => setNewConfig({...newConfig, userCategory: value})}>
-                    <SelectTrigger className="w-80">
-                      <SelectValue placeholder="选择人员类别" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="指挥管理军官">指挥管理军官</SelectItem>
-                      <SelectItem value="专业技术军官">专业技术军官</SelectItem>
-                      <SelectItem value="文职">文职</SelectItem>
-                      <SelectItem value="军士">军士</SelectItem>
-                      <SelectItem value="聘用制">聘用制</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label>人员类别（可多选）</Label>
+                  <MultiSelectDropdown
+                    options={PERSONNEL_CATEGORIES}
+                    selectedValues={newConfig.userCategories || []}
+                    onSelectionChange={(values) => setNewConfig({ ...newConfig, userCategories: values })}
+                    placeholder="选择人员类别"
+                    className="w-80"
+                  />
                 </div>
                 <div className="space-y-3">
                   <Label>题型配置</Label>
@@ -467,31 +589,43 @@ const ExamConfigManager: React.FC = () => {
                         {availableCounts ? `可选: ${availableCounts.choice}` : '加载中...'}
                       </span>
                     <Input 
-                      type="number" 
+                      type="text" 
                         placeholder="数量"
-                        className="w-14 px-2 text-center"
-                      value={newConfig.questionTypes?.choice.count}
-                      onChange={(e) => setNewConfig({
-                        ...newConfig, 
-                        questionTypes: {
-                          ...newConfig.questionTypes!,
-                          choice: { ...newConfig.questionTypes!.choice, count: parseInt(e.target.value) || 0 }
+                        className="w-14 px-2 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      value={newConfig.questionTypes?.choice.count || ''}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // 只允许数字，不能以0开头（除非就是0）
+                        if (value === '' || (value.match(/^\d+$/) && !value.match(/^0\d/))) {
+                          setNewConfig({
+                            ...newConfig, 
+                            questionTypes: {
+                              ...newConfig.questionTypes!,
+                              choice: { ...newConfig.questionTypes!.choice, count: value === '' ? 0 : parseInt(value) }
+                            }
+                          });
                         }
-                      })}
+                      }}
                     />
                       <div className="flex items-center space-x-1 whitespace-nowrap flex-nowrap">
                       <Input 
-                        type="number" 
+                        type="text" 
                         placeholder="分值"
-                          className="w-14 px-2 text-center"
-                        value={newConfig.questionTypes?.choice.score}
-                        onChange={(e) => setNewConfig({
-                          ...newConfig, 
-                          questionTypes: {
-                            ...newConfig.questionTypes!,
-                            choice: { ...newConfig.questionTypes!.choice, score: parseInt(e.target.value) || 2 }
+                          className="w-14 px-2 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        value={newConfig.questionTypes?.choice.score || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          // 只允许数字，不能以0开头（除非就是0）
+                          if (value === '' || (value.match(/^\d+$/) && !value.match(/^0\d/))) {
+                            setNewConfig({
+                              ...newConfig, 
+                              questionTypes: {
+                                ...newConfig.questionTypes!,
+                                choice: { ...newConfig.questionTypes!.choice, score: value === '' ? '' : parseInt(value) }
+                              }
+                            });
                           }
-                        })}
+                        }}
                       />
                         <span className="text-sm text-gray-600 whitespace-nowrap">分/题</span>
                       </div>
@@ -502,31 +636,43 @@ const ExamConfigManager: React.FC = () => {
                         {availableCounts ? `可选: ${availableCounts.multi}` : '加载中...'}
                       </span>
                     <Input 
-                      type="number" 
+                      type="text" 
                         placeholder="数量"
-                        className="w-14 px-2 text-center"
-                      value={newConfig.questionTypes?.multi.count}
-                      onChange={(e) => setNewConfig({
-                        ...newConfig, 
-                        questionTypes: {
-                          ...newConfig.questionTypes!,
-                          multi: { ...newConfig.questionTypes!.multi, count: parseInt(e.target.value) || 0 }
+                        className="w-14 px-2 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      value={newConfig.questionTypes?.multi.count || ''}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // 只允许数字，不能以0开头（除非就是0）
+                        if (value === '' || (value.match(/^\d+$/) && !value.match(/^0\d/))) {
+                          setNewConfig({
+                            ...newConfig, 
+                            questionTypes: {
+                              ...newConfig.questionTypes!,
+                              multi: { ...newConfig.questionTypes!.multi, count: value === '' ? 0 : parseInt(value) }
+                            }
+                          });
                         }
-                      })}
+                      }}
                     />
                       <div className="flex items-center space-x-1 whitespace-nowrap flex-nowrap">
                       <Input 
-                        type="number" 
+                        type="text" 
                         placeholder="分值"
-                          className="w-14 px-2 text-center"
-                        value={newConfig.questionTypes?.multi.score}
-                        onChange={(e) => setNewConfig({
-                          ...newConfig, 
-                          questionTypes: {
-                            ...newConfig.questionTypes!,
-                            multi: { ...newConfig.questionTypes!.multi, score: parseInt(e.target.value) || 4 }
+                          className="w-14 px-2 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        value={newConfig.questionTypes?.multi.score || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          // 只允许数字，不能以0开头（除非就是0）
+                          if (value === '' || (value.match(/^\d+$/) && !value.match(/^0\d/))) {
+                            setNewConfig({
+                              ...newConfig, 
+                              questionTypes: {
+                                ...newConfig.questionTypes!,
+                                multi: { ...newConfig.questionTypes!.multi, score: value === '' ? '' : parseInt(value) }
+                              }
+                            });
                           }
-                        })}
+                        }}
                       />
                         <span className="text-sm text-gray-600 whitespace-nowrap">分/题</span>
                       </div>
@@ -537,31 +683,43 @@ const ExamConfigManager: React.FC = () => {
                         {availableCounts ? `可选: ${availableCounts.judgment}` : '加载中...'}
                       </span>
                     <Input 
-                      type="number" 
+                      type="text" 
                         placeholder="数量"
-                        className="w-14 px-2 text-center"
-                      value={newConfig.questionTypes?.judgment.count}
-                      onChange={(e) => setNewConfig({
-                        ...newConfig, 
-                        questionTypes: {
-                          ...newConfig.questionTypes!,
-                          judgment: { ...newConfig.questionTypes!.judgment, count: parseInt(e.target.value) || 0 }
+                        className="w-14 px-2 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      value={newConfig.questionTypes?.judgment.count || ''}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // 只允许数字，不能以0开头（除非就是0）
+                        if (value === '' || (value.match(/^\d+$/) && !value.match(/^0\d/))) {
+                          setNewConfig({
+                            ...newConfig, 
+                            questionTypes: {
+                              ...newConfig.questionTypes!,
+                              judgment: { ...newConfig.questionTypes!.judgment, count: value === '' ? 0 : parseInt(value) }
+                            }
+                          });
                         }
-                      })}
+                      }}
                     />
                       <div className="flex items-center space-x-1 whitespace-nowrap flex-nowrap">
                       <Input 
-                        type="number" 
+                        type="text" 
                         placeholder="分值"
-                          className="w-14 px-2 text-center"
-                        value={newConfig.questionTypes?.judgment.score}
-                        onChange={(e) => setNewConfig({
-                          ...newConfig, 
-                          questionTypes: {
-                            ...newConfig.questionTypes!,
-                            judgment: { ...newConfig.questionTypes!.judgment, score: parseInt(e.target.value) || 2 }
+                          className="w-14 px-2 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        value={newConfig.questionTypes?.judgment.score || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          // 只允许数字，不能以0开头（除非就是0）
+                          if (value === '' || (value.match(/^\d+$/) && !value.match(/^0\d/))) {
+                            setNewConfig({
+                              ...newConfig, 
+                              questionTypes: {
+                                ...newConfig.questionTypes!,
+                                judgment: { ...newConfig.questionTypes!.judgment, score: value === '' ? '' : parseInt(value) }
+                              }
+                            });
                           }
-                        })}
+                        }}
                       />
                         <span className="text-sm text-gray-600 whitespace-nowrap">分/题</span>
                       </div>
@@ -579,10 +737,33 @@ const ExamConfigManager: React.FC = () => {
                 <div>
                   <Label>考试时长（分钟）</Label>
                   <Input 
-                    type="number" 
-                    value={newConfig.duration} 
-                    onChange={(e) => setNewConfig({...newConfig, duration: parseInt(e.target.value)})}
+                    type="text" 
+                    value={newConfig.duration || ''} 
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      // 只允许数字，不能以0开头（除非就是0）
+                      if (value === '' || (value.match(/^\d+$/) && !value.match(/^0\d/))) {
+                        setNewConfig({...newConfig, duration: value === '' ? '' : parseInt(value)});
+                      }
+                    }}
                     placeholder="考试时长"
+                    className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                </div>
+                <div>
+                  <Label>及格分数</Label>
+                  <Input 
+                    type="text" 
+                    value={newConfig.passScore || ''} 
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      // 只允许数字，不能以0开头（除非就是0）
+                      if (value === '' || (value.match(/^\d+$/) && !value.match(/^0\d/))) {
+                        setNewConfig({...newConfig, passScore: value === '' ? '' : parseInt(value)});
+                      }
+                    }}
+                    placeholder="及格分数"
+                    className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                 </div>
                 </div>
@@ -593,7 +774,7 @@ const ExamConfigManager: React.FC = () => {
               </div>
 
             {/* 现有配置列表 */}
-            <div className="lg:col-span-5 flex flex-col h-full">
+            <div className="lg:col-span-4 flex flex-col h-full">
               <div className="flex-1 flex items-stretch">
                 {/* 左翻页箭头 */}
                 <div className="flex items-center pr-2">
@@ -627,9 +808,13 @@ const ExamConfigManager: React.FC = () => {
                         <span className="text-gray-600">考试题目分类：</span>
                               <span>{config.categories.map(cid => getCategoryNameById(options?.categories, cid) || cid).join(', ')}</span>
                       </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">人员类别：</span>
-                        <span className="text-blue-600 font-medium">{config.userCategory || '指挥管理军官'}</span>
+                      <div className="flex text-sm">
+                        <span className="text-gray-600 whitespace-nowrap">人员类别：</span>
+                        <span className="text-blue-600 font-medium ml-2 break-words">
+                          {Array.isArray(config.userCategories) 
+                            ? config.userCategories.join(', ') 
+                            : config.userCategories || '指挥管理军官'}
+                        </span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">考试时长：</span>
@@ -733,19 +918,14 @@ const ExamConfigManager: React.FC = () => {
                 </Select>
               </div>
               <div>
-                <Label>人员类别</Label>
-                <Select value={editForm.userCategory || '指挥管理军官'} onValueChange={value => setEditForm({ ...editForm, userCategory: value })}>
-                  <SelectTrigger className="w-80">
-                    <SelectValue placeholder="选择人员类别" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="指挥管理军官">指挥管理军官</SelectItem>
-                    <SelectItem value="专业技术军官">专业技术军官</SelectItem>
-                    <SelectItem value="文职">文职</SelectItem>
-                    <SelectItem value="军士">军士</SelectItem>
-                    <SelectItem value="聘用制">聘用制</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label>人员类别（可多选）</Label>
+                <MultiSelectDropdown
+                  options={PERSONNEL_CATEGORIES}
+                  selectedValues={editForm.userCategories || []}
+                  onSelectionChange={(values) => setEditForm({ ...editForm, userCategories: values })}
+                  placeholder="选择人员类别"
+                  className="w-80"
+                />
               </div>
               <div className="space-y-3">
                 <Label>题型配置</Label>
@@ -755,20 +935,33 @@ const ExamConfigManager: React.FC = () => {
                     {editAvailableCounts ? `可选: ${editAvailableCounts.choice}` : '加载中...'}
                   </span>
                   <Input 
-                    type="number" 
+                    type="text" 
                     placeholder="数量"
-                    className="w-14 px-2 text-center"
-                    value={editForm.questionTypes?.choice.count}
-                    onChange={e => setEditForm({ ...editForm, questionTypes: { ...editForm.questionTypes!, choice: { ...editForm.questionTypes!.choice, count: parseInt(e.target.value) || 0 } } })}
+                    className="w-14 px-2 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    value={editForm.questionTypes?.choice.count || ''}
+                    onChange={e => {
+                      const value = e.target.value;
+                      // 只允许数字，不能以0开头（除非就是0）
+                      if (value === '' || (value.match(/^\d+$/) && !value.match(/^0\d/))) {
+                        setEditForm({ ...editForm, questionTypes: { ...editForm.questionTypes!, choice: { ...editForm.questionTypes!.choice, count: value === '' ? 0 : parseInt(value) } } });
+                      }
+                    }}
                     disabled={globalLoading}
                   />
                   <div className="flex items-center space-x-1 whitespace-nowrap flex-nowrap">
                     <Input 
-                      type="number" 
+                      type="text" 
                       placeholder="分值"
-                      className="w-14 px-2 text-center"
-                      value={2}
-                      disabled
+                      className="w-14 px-2 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      value={editForm.questionTypes?.choice.score || ''}
+                      onChange={e => {
+                        const value = e.target.value;
+                        // 只允许数字，不能以0开头（除非就是0）
+                        if (value === '' || (value.match(/^\d+$/) && !value.match(/^0\d/))) {
+                          setEditForm({ ...editForm, questionTypes: { ...editForm.questionTypes!, choice: { ...editForm.questionTypes!.choice, score: value === '' ? '' : parseInt(value) } } });
+                        }
+                      }}
+                      disabled={globalLoading}
                     />
                     <span className="text-sm text-gray-600 whitespace-nowrap">分/题</span>
                   </div>
@@ -779,20 +972,33 @@ const ExamConfigManager: React.FC = () => {
                     {editAvailableCounts ? `可选: ${editAvailableCounts.multi}` : '加载中...'}
                   </span>
                   <Input 
-                    type="number" 
+                    type="text" 
                     placeholder="数量"
-                    className="w-14 px-2 text-center"
-                    value={editForm.questionTypes?.multi.count}
-                    onChange={e => setEditForm({ ...editForm, questionTypes: { ...editForm.questionTypes!, multi: { ...editForm.questionTypes!.multi, count: parseInt(e.target.value) || 0 } } })}
+                    className="w-14 px-2 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    value={editForm.questionTypes?.multi.count || ''}
+                    onChange={e => {
+                      const value = e.target.value;
+                      // 只允许数字，不能以0开头（除非就是0）
+                      if (value === '' || (value.match(/^\d+$/) && !value.match(/^0\d/))) {
+                        setEditForm({ ...editForm, questionTypes: { ...editForm.questionTypes!, multi: { ...editForm.questionTypes!.multi, count: value === '' ? 0 : parseInt(value) } } });
+                      }
+                    }}
                     disabled={globalLoading}
                   />
                   <div className="flex items-center space-x-1 whitespace-nowrap flex-nowrap">
                     <Input 
-                      type="number" 
+                      type="text" 
                       placeholder="分值"
-                      className="w-14 px-2 text-center"
-                      value={4}
-                      disabled
+                      className="w-14 px-2 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      value={editForm.questionTypes?.multi.score || ''}
+                      onChange={e => {
+                        const value = e.target.value;
+                        // 只允许数字，不能以0开头（除非就是0）
+                        if (value === '' || (value.match(/^\d+$/) && !value.match(/^0\d/))) {
+                          setEditForm({ ...editForm, questionTypes: { ...editForm.questionTypes!, multi: { ...editForm.questionTypes!.multi, score: value === '' ? '' : parseInt(value) } } });
+                        }
+                      }}
+                      disabled={globalLoading}
                     />
                     <span className="text-sm text-gray-600 whitespace-nowrap">分/题</span>
                   </div>
@@ -803,20 +1009,33 @@ const ExamConfigManager: React.FC = () => {
                     {editAvailableCounts ? `可选: ${editAvailableCounts.judgment}` : '加载中...'}
                   </span>
                   <Input 
-                    type="number" 
+                    type="text" 
                     placeholder="数量"
-                    className="w-14 px-2 text-center"
-                    value={editForm.questionTypes?.judgment.count}
-                    onChange={e => setEditForm({ ...editForm, questionTypes: { ...editForm.questionTypes!, judgment: { ...editForm.questionTypes!.judgment, count: parseInt(e.target.value) || 0 } } })}
+                    className="w-14 px-2 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    value={editForm.questionTypes?.judgment.count || ''}
+                    onChange={e => {
+                      const value = e.target.value;
+                      // 只允许数字，不能以0开头（除非就是0）
+                      if (value === '' || (value.match(/^\d+$/) && !value.match(/^0\d/))) {
+                        setEditForm({ ...editForm, questionTypes: { ...editForm.questionTypes!, judgment: { ...editForm.questionTypes!.judgment, count: value === '' ? 0 : parseInt(value) } } });
+                      }
+                    }}
                     disabled={globalLoading}
                   />
                   <div className="flex items-center space-x-1 whitespace-nowrap flex-nowrap">
                     <Input 
-                      type="number" 
+                      type="text" 
                       placeholder="分值"
-                      className="w-14 px-2 text-center"
-                      value={2}
-                      disabled
+                      className="w-14 px-2 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      value={editForm.questionTypes?.judgment.score || ''}
+                      onChange={e => {
+                        const value = e.target.value;
+                        // 只允许数字，不能以0开头（除非就是0）
+                        if (value === '' || (value.match(/^\d+$/) && !value.match(/^0\d/))) {
+                          setEditForm({ ...editForm, questionTypes: { ...editForm.questionTypes!, judgment: { ...editForm.questionTypes!.judgment, score: value === '' ? '' : parseInt(value) } } });
+                        }
+                      }}
+                      disabled={globalLoading}
                     />
                     <span className="text-sm text-gray-600 whitespace-nowrap">分/题</span>
                   </div>
@@ -834,7 +1053,33 @@ const ExamConfigManager: React.FC = () => {
               </div>
               <div>
                 <Label>考试时长（分钟）</Label>
-                <Input type="number" value={editForm.duration} onChange={e => setEditForm({ ...editForm, duration: parseInt(e.target.value) })} />
+                <Input 
+                  type="text" 
+                  value={editForm.duration || ''} 
+                  onChange={e => {
+                    const value = e.target.value;
+                    // 只允许数字，不能以0开头（除非就是0）
+                    if (value === '' || (value.match(/^\d+$/) && !value.match(/^0\d/))) {
+                      setEditForm({ ...editForm, duration: value === '' ? '' : parseInt(value) });
+                    }
+                  }}
+                  className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+              </div>
+              <div>
+                <Label>及格分数</Label>
+                <Input 
+                  type="text" 
+                  value={editForm.passScore || ''} 
+                  onChange={e => {
+                    const value = e.target.value;
+                    // 只允许数字，不能以0开头（除非就是0）
+                    if (value === '' || (value.match(/^\d+$/) && !value.match(/^0\d/))) {
+                      setEditForm({ ...editForm, passScore: value === '' ? '' : parseInt(value) });
+                    }
+                  }}
+                  className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
               </div>
             </div>
           )}

@@ -25,7 +25,7 @@ public class ExamPaperVo {
     private String updateBy;
     private Date updateTime;
     private String remark;
-    private String userCategory; // 人员类别
+    private String userCategories; // 人员类别（多个类别用逗号分隔）
 
     private String finished;
 } 

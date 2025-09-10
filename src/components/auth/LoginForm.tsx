@@ -120,17 +120,6 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin }) => {
           {isLoading ? "登录中..." : "登录"}
         </Button>
       </form>
-      <div className="mt-8 p-4 bg-blue-50 rounded-lg">
-        <p className="text-sm text-blue-800 mb-2">
-          <strong>演示账号：</strong>
-        </p>
-        <p className="text-xs text-blue-600">
-          管理员：身份证号 110101199001011234，姓名 管理员
-        </p>
-        <p className="text-xs text-blue-600">
-          学员：系统中有效身份证号和姓名
-        </p>
-      </div>
     </div>
   );
 };

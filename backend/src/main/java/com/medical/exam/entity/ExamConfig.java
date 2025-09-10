@@ -21,7 +21,7 @@ public class ExamConfig {
     private String configId;
     private String configName;
     private String categoryId;
-    private String userCategory; // 人员类别
+    private String userCategory; // 人员类别，多个类别用逗号分隔
     //考试时长
     private Integer duration;
     private Integer totalScore;
