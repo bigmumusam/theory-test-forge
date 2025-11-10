@@ -153,3 +153,7 @@ dist-ssr
 /backend/target/classes/com/medical/exam/vo/Options$OptionsBuilder.class
 /backend/target/exam-system-1.0.0.jar.original
 /backend/target/generated-sources/annotations/com/medical/exam/entity/table/SysLogTableDef.java
+/backend/.factorypath
+/backend/target/generated-sources/annotations/com/medical/exam/entity/table/ExamForceRetakeTableDef.java
+/backend/.factorypath
+/backend/target/generated-sources/annotations/com/medical/exam/entity/table/ExamForceRetakeTableDef.java
