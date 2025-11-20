@@ -19,7 +19,23 @@ export async function request(url: string, options: RequestInit = {}) {
   const fullUrl = url.startsWith("http") ? url : API_BASE + url;
 
   const res = await fetch(fullUrl, { ...options, headers });
-  if (!res.ok) throw new Error(await res.text());
+  const contentType = res.headers.get('content-type');
+  const isJson = contentType && contentType.includes('application/json');
+  
+  if (!res.ok) {
+    // 尝试解析 JSON 错误响应
+    if (isJson) {
+      try {
+        const errorData = await res.json();
+        throw new Error(errorData.message || errorData.error || `请求失败: ${res.status}`);
+      } catch (e) {
+        throw e instanceof Error ? e : new Error(`请求失败: ${res.status}`);
+      }
+    } else {
+      const text = await res.text();
+      throw new Error(text || `请求失败: ${res.status}`);
+    }
+  }
   return res.json();
 } 
 

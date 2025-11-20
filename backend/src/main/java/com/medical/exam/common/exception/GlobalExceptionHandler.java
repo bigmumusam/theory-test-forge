@@ -44,7 +44,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public Result<?> handleNotReadable(HttpMessageNotReadableException ex) {
-        return Result.error("请求体格式错误");
+        log.error("请求体格式错误: ", ex);
+        String message = ex.getMessage();
+        if (message != null && message.contains("JSON parse error")) {
+            return Result.error("JSON格式错误: " + (ex.getCause() != null ? ex.getCause().getMessage() : message));
+        }
+        return Result.error("请求体格式错误: " + (ex.getCause() != null ? ex.getCause().getMessage() : message));
     }
 
     @ExceptionHandler(DataAccessException.class)
