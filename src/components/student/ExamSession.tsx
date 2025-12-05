@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { User } from '../../types/auth';
 import { ExamPaper, Question } from '../../types/exam';
 import { useToast } from '@/hooks/use-toast';
@@ -24,9 +25,11 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
   const [showRefreshWarning, setShowRefreshWarning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [countdown, setCountdown] = useState(15);
+  const [showSubmitConfirmDialog, setShowSubmitConfirmDialog] = useState(false);
   const { toast } = useToast();
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
+  const fiveMinuteWarnedRef = useRef(false);
 
   // 解析多选题 correctAnswer 并修正 type 字段
   const parsedQuestions = exam.questions.map(q => {
@@ -98,15 +101,28 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
   useEffect(() => {
     if (!isExamCompleted) {
       timerRef.current = setInterval(() => {
-      setTimeRemaining(prev => {
-        if (prev <= 1) {
+        setTimeRemaining(prev => {
+          const next = prev - 1;
+
+          // 剩余5分钟提醒（只提醒一次）
+          if (!fiveMinuteWarnedRef.current && next === 5 * 60) {
+            fiveMinuteWarnedRef.current = true;
+            toast({
+              title: "考试提醒",
+              description: "距离考试结束还剩 5 分钟，请尽快检查并提交试卷。",
+              variant: "destructive"
+            });
+          }
+
+          if (next <= 0) {
             clearInterval(timerRef.current!);
-          handleAutoSubmit();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+            handleAutoSubmit();
+            return 0;
+          }
+
+          return next;
+        });
+      }, 1000);
     }
 
     return () => {
@@ -183,18 +199,23 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
     return { score, totalScore, correctCount, totalQuestions: exam.questions.length };
   };
 
-  const handleSubmit = async () => {
-    // 检查是否所有题目都已答题
-    const answeredCount = getAnsweredCount();
-    const totalQuestions = exam.questions.length;
-    
-    if (answeredCount < totalQuestions) {
-      toast({
-        title: "无法提交",
-        description: `还有 ${totalQuestions - answeredCount} 道题目未完成，请完成所有题目后再提交`,
-        variant: "destructive"
-      });
-      return;
+  // 通用提交函数：支持是否跳过“全部答完”检查
+  const submitExam = async (options?: { skipAnswerCheck?: boolean }) => {
+    const skipAnswerCheck = options?.skipAnswerCheck ?? false;
+
+    // 检查是否所有题目都已答题（仅手动提交时生效）
+    if (!skipAnswerCheck) {
+      const answeredCount = getAnsweredCount();
+      const totalQuestions = exam.questions.length;
+      
+      if (answeredCount < totalQuestions) {
+        toast({
+          title: "无法提交",
+          description: `还有 ${totalQuestions - answeredCount} 道题目未完成，请完成所有题目后再提交`,
+          variant: "destructive"
+        });
+        return;
+      }
     }
 
     // 防止重复提交
@@ -209,7 +230,7 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
 
     setSubmitting(true);
     try {
-      // 准备提交数据
+      // 准备提交数据（允许有未答题，未答题的 userAnswer 为空字符串）
       const submitData = {
         recordId: exam.id, // 使用试卷ID作为记录ID
         answers: exam.questions.map(question => ({
@@ -257,6 +278,17 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
     }
   };
 
+  // 手动提交：显示确认对话框
+  const handleSubmit = () => {
+    setShowSubmitConfirmDialog(true);
+  };
+
+  // 确认提交试卷
+  const handleConfirmSubmitExam = async () => {
+    setShowSubmitConfirmDialog(false);
+    await submitExam({ skipAnswerCheck: true });
+  };
+
   const handleAutoSubmit = () => {
     const answeredCount = getAnsweredCount();
     const totalQuestions = exam.questions.length;
@@ -274,7 +306,8 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
         variant: "destructive"
       });
     }
-    handleSubmit();
+    // 考试时间到：强制交卷，即使有未完成的题目
+    submitExam({ skipAnswerCheck: true });
   };
 
   const handleConfirmSubmit = () => {
@@ -445,42 +478,137 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
                 </div>
               )}
               {currentQuestion.type === 'multi' && currentQuestion.options && (
-                <div className="space-y-2">
-                  {currentQuestion.options.map((option, index) => {
+                <div className="space-y-4">
+                  {/* 已选择答案的预览区域 */}
+                  {(() => {
                     const ans = answers[currentQuestion.id];
-                    let selected = false;
-                    if (Array.isArray(ans)) {
-                      selected = ans.includes(index);
+                    const selectedIndexes = Array.isArray(ans) ? ans : [];
+                    if (selectedIndexes.length > 0) {
+                      return (
+                        <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                          <div className="text-sm font-semibold text-blue-800 mb-2">已选择的答案顺序：</div>
+                          <div className="space-y-2">
+                            {selectedIndexes.map((optionIndex, orderIndex) => (
+                              <div
+                                key={`selected-${optionIndex}-${orderIndex}`}
+                                className="flex items-center justify-between bg-white rounded border border-blue-300 p-2"
+                              >
+                                <div className="flex items-center space-x-2 flex-1">
+                                  <span className="w-6 h-6 bg-blue-600 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                                    {orderIndex + 1}
+                                  </span>
+                                  <span className="text-sm font-medium text-blue-800">
+                                    {String.fromCharCode(65 + optionIndex)}. {currentQuestion.options[optionIndex]}
+                                  </span>
+                                </div>
+                                <div className="flex items-center space-x-1">
+                                  {/* 上移按钮 */}
+                                  {orderIndex > 0 && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const newOrder = [...selectedIndexes];
+                                        [newOrder[orderIndex - 1], newOrder[orderIndex]] = [newOrder[orderIndex], newOrder[orderIndex - 1]];
+                                        handleAnswerSelect(currentQuestion.id, newOrder);
+                                      }}
+                                      className="p-1 hover:bg-blue-100 rounded text-blue-600"
+                                      title="上移"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                      </svg>
+                                    </button>
+                                  )}
+                                  {/* 下移按钮 */}
+                                  {orderIndex < selectedIndexes.length - 1 && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const newOrder = [...selectedIndexes];
+                                        [newOrder[orderIndex], newOrder[orderIndex + 1]] = [newOrder[orderIndex + 1], newOrder[orderIndex]];
+                                        handleAnswerSelect(currentQuestion.id, newOrder);
+                                      }}
+                                      className="p-1 hover:bg-blue-100 rounded text-blue-600"
+                                      title="下移"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                      </svg>
+                                    </button>
+                                  )}
+                                  {/* 删除按钮 */}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const newOrder = selectedIndexes.filter((_, idx) => idx !== orderIndex);
+                                      handleAnswerSelect(currentQuestion.id, newOrder);
+                                    }}
+                                    className="p-1 hover:bg-red-100 rounded text-red-600"
+                                    title="移除"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
                     }
-                    return (
-                      <div
-                        key={index}
-                        onClick={() => {
-                          let prev: number[] = Array.isArray(ans) ? ans : [];
-                          if (selected) {
-                            prev = prev.filter((i: number) => i !== index);
-                          } else {
-                            prev = [...prev, index];
-                          }
-                          handleAnswerSelect(currentQuestion.id, prev);
-                        }}
-                        className={`flex items-center space-x-2 p-4 rounded border cursor-pointer transition-all select-none ${
-                          selected
-                            ? 'bg-yellow-50 border-yellow-500 text-yellow-800 font-bold'
-                            : 'bg-gray-50 border-transparent'
-                        }`}
-                      >
-                        <span className="w-8 text-center font-medium">{String.fromCharCode(65 + index)}.</span>
-                        <span className="flex-1 text-gray-800 text-left">{option}</span>
-                        <input
-                          type="checkbox"
-                          checked={selected}
-                          readOnly
-                          className="w-4 h-4 border-2 rounded"
-                        />
-                      </div>
-                    );
-                  })}
+                    return null;
+                  })()}
+                  
+                  {/* 选项列表 */}
+                  <div className="space-y-2">
+                    {currentQuestion.options.map((option, index) => {
+                      const ans = answers[currentQuestion.id];
+                      let selected = false;
+                      let selectionOrder: number | null = null;
+                      if (Array.isArray(ans)) {
+                        selected = ans.includes(index);
+                        if (selected) {
+                          selectionOrder = ans.indexOf(index) + 1; // 获取在数组中的位置（从1开始）
+                        }
+                      }
+                      return (
+                        <div
+                          key={index}
+                          onClick={() => {
+                            let prev: number[] = Array.isArray(ans) ? ans : [];
+                            if (selected) {
+                              // 取消选择：从数组中移除，并保持其他选项的顺序
+                              prev = prev.filter((i: number) => i !== index);
+                            } else {
+                              // 添加选择：追加到数组末尾，保持选择的顺序
+                              prev = [...prev, index];
+                            }
+                            handleAnswerSelect(currentQuestion.id, prev);
+                          }}
+                          className={`flex items-center space-x-2 p-4 rounded border cursor-pointer transition-all select-none ${
+                            selected
+                              ? 'bg-yellow-50 border-yellow-500 text-yellow-800 font-bold'
+                              : 'bg-gray-50 border-transparent'
+                          }`}
+                        >
+                          <span className="w-8 text-center font-medium">{String.fromCharCode(65 + index)}.</span>
+                          <span className="flex-1 text-gray-800 text-left">{option}</span>
+                          {selected && selectionOrder && (
+                            <span className="ml-2 px-2 py-1 bg-yellow-600 text-white text-xs font-bold rounded-full">
+                              第{selectionOrder}个选择
+                            </span>
+                          )}
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            readOnly
+                            className="w-4 h-4 border-2 rounded"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
               
@@ -528,7 +656,6 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
                 {currentQuestionIndex < exam.questions.length - 1 && (
                   <Button 
                     onClick={handleNext}
-                    disabled={!isCurrentQuestionAnswered()}
                   >
                     下一题
                   </Button>
@@ -543,10 +670,12 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
               <h3 className="text-lg font-semibold text-gray-800 mb-4">答题卡</h3>
               
               <div className="text-sm text-gray-600 mb-4">
-                已答题：{getAnsweredCount()}/{exam.questions.length}
+                <div className="mb-1">
+                  已答题：<span className="font-bold text-green-600">{getAnsweredCount()}</span> / {exam.questions.length}
+                </div>
                 {getAnsweredCount() < exam.questions.length && (
-                  <div className="text-red-600 text-xs mt-1">
-                    还需完成 {exam.questions.length - getAnsweredCount()} 道题目
+                  <div className="text-xs text-gray-500 mt-1">
+                    未答题：{exam.questions.length - getAnsweredCount()} 道
                   </div>
                 )}
               </div>
@@ -586,13 +715,10 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
               
               <Button 
                 onClick={handleSubmit}
-                disabled={submitting || getAnsweredCount() < exam.questions.length}
+                disabled={submitting}
                 className="w-full mt-6 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
-                {submitting ? '提交中...' : 
-                 getAnsweredCount() < exam.questions.length ? 
-                 `提交试卷 (${getAnsweredCount()}/${exam.questions.length})` : 
-                 '提交试卷'}
+                {submitting ? '提交中...' : '提交试卷'}
               </Button>
             </Card>
           </div>
@@ -657,6 +783,62 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
           )}
         </DialogContent>
       </Dialog>
+
+      {/* 提交确认对话框 */}
+      <AlertDialog open={showSubmitConfirmDialog} onOpenChange={setShowSubmitConfirmDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认提交试卷</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要提交试卷吗？提交后将无法继续答题。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          
+          <div className="space-y-4 py-4">
+            {/* 答题统计 */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-700">已答题：</span>
+                  <span className="text-sm font-bold text-green-600">
+                    {getAnsweredCount()} / {exam.questions.length} 题
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-700">未答题：</span>
+                  <span className="text-sm font-bold text-red-600">
+                    {exam.questions.length - getAnsweredCount()} 题
+                  </span>
+                </div>
+              </div>
+            </div>
+            
+            {/* 未答题提示 */}
+            {getAnsweredCount() < exam.questions.length && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="flex items-start space-x-2">
+                  <svg className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                  <p className="text-sm text-yellow-800">
+                    您还有 <span className="font-bold">{exam.questions.length - getAnsweredCount()}</span> 道题目未作答。未作答的题目将不计分。
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleConfirmSubmitExam}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              确认提交
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* 刷新警告弹窗 */}
       <Dialog open={showRefreshWarning} onOpenChange={setShowRefreshWarning}>

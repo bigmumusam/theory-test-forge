@@ -211,6 +211,7 @@ CREATE TABLE `exam_record` (
   `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `remark` varchar(500) DEFAULT '' COMMENT '备注',
   `retake` int(11) DEFAULT 0 COMMENT '重考标识(0:正常考试,1:重考)',
+  `deleted` tinyint(1) DEFAULT 0 COMMENT '逻辑删除标识(0:未删除,1:已删除)',
   PRIMARY KEY (`record_id`),
   KEY `idx_user_id` (`user_id`),
   KEY `idx_paper_id` (`paper_id`),

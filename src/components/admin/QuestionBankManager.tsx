@@ -24,7 +24,7 @@ import ImportDialog from './ImportDialog';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { request } from '@/lib/request';
 import { useOptions } from '../../context/OptionsContext';
-import { Pagination, PaginationContent, PaginationItem, PaginationLink } from '@/components/ui/pagination';
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationEllipsis } from '@/components/ui/pagination';
 
 // 层级颜色配置
 const levelColors = [
@@ -980,40 +980,90 @@ const QuestionBankManager: React.FC = () => {
           </div>
           {/* 题目分类分页 */}
           {tabValue === 'categories' && (
-            <div className="mt-6 flex flex-row justify-between items-center flex-nowrap gap-4">
-              <p className="text-sm text-gray-600 whitespace-nowrap">
+            <div className="mt-6 flex flex-col md:flex-row md:justify-between md:items-center gap-2">
+              <p className="text-sm text-gray-600 whitespace-nowrap mb-2 md:mb-0">
                 显示 {(categoryPage - 1) * categoryPageSize + 1} 到 {Math.min(categoryPage * categoryPageSize, totalCategoryRows)} 条，共 {totalCategoryRows} 条记录
               </p>
-              <Pagination>
-                <PaginationContent>
-                  <PaginationItem>
-                    <button
-                      onClick={() => handleCategoryPageChange(Math.max(1, categoryPage - 1))}
-                      className={"text-sm px-3 py-1 rounded border mr-1 " + (categoryPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer')}
-                      disabled={categoryPage === 1}
-                    >上一页</button>
-                  </PaginationItem>
-                  {Array.from({ length: totalCategoryPages }, (_, i) => i + 1).map(page => (
-                    <PaginationItem key={page}>
-                      <PaginationLink
-                        onClick={() => handleCategoryPageChange(page)}
-                        isActive={categoryPage === page}
-                        className="text-sm cursor-pointer"
-                      >
-                        {page}
-                      </PaginationLink>
+              <div className="w-full md:w-auto min-w-0">
+                <Pagination className="max-w-full">
+                  <PaginationContent className="flex-wrap justify-center gap-1">
+                    <PaginationItem>
+                      <button
+                        onClick={() => handleCategoryPageChange(Math.max(1, categoryPage - 1))}
+                        className={"text-sm px-3 py-1 rounded border mr-1 " + (categoryPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer')}
+                        disabled={categoryPage === 1}
+                      >上一页</button>
                     </PaginationItem>
-                  ))}
-                  <PaginationItem>
-                    <button
-                      onClick={() => handleCategoryPageChange(Math.min(totalCategoryPages, categoryPage + 1))}
-                      className={"text-sm px-3 py-1 rounded border ml-1 " + (categoryPage === totalCategoryPages ? 'pointer-events-none opacity-50' : 'cursor-pointer')}
-                      disabled={categoryPage === totalCategoryPages}
-                    >下一页</button>
-                  </PaginationItem>
-                </PaginationContent>
-              </Pagination>
-          </div>
+                    {/* 显示页码 - 智能分页，最多显示7个页码，使用省略号 */}
+                    {(() => {
+                      const maxVisiblePages = 7;
+                      const pages: (number | 'ellipsis')[] = [];
+                      
+                      if (totalCategoryPages <= maxVisiblePages) {
+                        // 如果总页数少于等于7，显示所有页码
+                        for (let i = 1; i <= totalCategoryPages; i++) {
+                          pages.push(i);
+                        }
+                      } else {
+                        // 始终显示第一页
+                        pages.push(1);
+                        
+                        if (categoryPage <= 4) {
+                          // 当前页在前4页，显示 1 2 3 4 5 ... 最后一页
+                          for (let i = 2; i <= 5; i++) {
+                            pages.push(i);
+                          }
+                          pages.push('ellipsis');
+                          pages.push(totalCategoryPages);
+                        } else if (categoryPage >= totalCategoryPages - 3) {
+                          // 当前页在后4页，显示 1 ... 倒数4页 最后一页
+                          pages.push('ellipsis');
+                          for (let i = totalCategoryPages - 4; i <= totalCategoryPages; i++) {
+                            pages.push(i);
+                          }
+                        } else {
+                          // 当前页在中间，显示 1 ... 当前页前后各2页 ... 最后一页
+                          pages.push('ellipsis');
+                          for (let i = categoryPage - 2; i <= categoryPage + 2; i++) {
+                            pages.push(i);
+                          }
+                          pages.push('ellipsis');
+                          pages.push(totalCategoryPages);
+                        }
+                      }
+                      
+                      return pages.map((page, index) => {
+                        if (page === 'ellipsis') {
+                          return (
+                            <PaginationItem key={`ellipsis-${index}`}>
+                              <PaginationEllipsis />
+                            </PaginationItem>
+                          );
+                        }
+                        return (
+                          <PaginationItem key={page}>
+                            <PaginationLink
+                              onClick={() => handleCategoryPageChange(page)}
+                              isActive={categoryPage === page}
+                              className="text-sm cursor-pointer"
+                            >
+                              {page}
+                            </PaginationLink>
+                          </PaginationItem>
+                        );
+                      });
+                    })()}
+                    <PaginationItem>
+                      <button
+                        onClick={() => handleCategoryPageChange(Math.min(totalCategoryPages, categoryPage + 1))}
+                        className={"text-sm px-3 py-1 rounded border ml-1 " + (categoryPage === totalCategoryPages ? 'pointer-events-none opacity-50' : 'cursor-pointer')}
+                        disabled={categoryPage === totalCategoryPages}
+                      >下一页</button>
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              </div>
+            </div>
           )}
         </TabsContent>
 
@@ -1191,40 +1241,90 @@ const QuestionBankManager: React.FC = () => {
             )}
             {/* 题库分页 */}
             {tabValue === 'questions' && totalQuestionRows > 0 && (
-              <div className="mt-6 flex flex-row justify-between items-center flex-nowrap gap-4">
-                <p className="text-sm text-gray-600 whitespace-nowrap">
+              <div className="mt-6 flex flex-col md:flex-row md:justify-between md:items-center gap-2">
+                <p className="text-sm text-gray-600 whitespace-nowrap mb-2 md:mb-0">
                   显示 {(questionPage - 1) * questionPageSize + 1} 到 {Math.min(questionPage * questionPageSize, totalQuestionRows)} 条，共 {totalQuestionRows} 条记录
                 </p>
-                <Pagination>
-                  <PaginationContent>
-                    <PaginationItem>
-                      <button
-                        onClick={() => handleQuestionPageChange(Math.max(1, questionPage - 1))}
-                        className={"text-sm px-3 py-1 rounded border mr-1 " + (questionPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer')}
-                        disabled={questionPage === 1}
-                      >上一页</button>
-                    </PaginationItem>
-                    {Array.from({ length: totalQuestionPages }, (_, i) => i + 1).map(p => (
-                      <PaginationItem key={p}>
-                        <PaginationLink
-                          onClick={() => handleQuestionPageChange(p)}
-                          isActive={questionPage === p}
-                          className="text-sm cursor-pointer"
-                        >
-                          {p}
-                        </PaginationLink>
+                <div className="w-full md:w-auto min-w-0">
+                  <Pagination className="max-w-full">
+                    <PaginationContent className="flex-wrap justify-center gap-1">
+                      <PaginationItem>
+                        <button
+                          onClick={() => handleQuestionPageChange(Math.max(1, questionPage - 1))}
+                          className={"text-sm px-3 py-1 rounded border mr-1 " + (questionPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer')}
+                          disabled={questionPage === 1}
+                        >上一页</button>
                       </PaginationItem>
-                    ))}
-                    <PaginationItem>
-                      <button
-                        onClick={() => handleQuestionPageChange(Math.min(totalQuestionPages, questionPage + 1))}
-                        className={"text-sm px-3 py-1 rounded border ml-1 " + (questionPage === totalQuestionPages ? 'pointer-events-none opacity-50' : 'cursor-pointer')}
-                        disabled={questionPage === totalQuestionPages}
-                      >下一页</button>
-                    </PaginationItem>
-                  </PaginationContent>
-                </Pagination>
-            </div>
+                      {/* 显示页码 - 智能分页，最多显示7个页码，使用省略号 */}
+                      {(() => {
+                        const maxVisiblePages = 7;
+                        const pages: (number | 'ellipsis')[] = [];
+                        
+                        if (totalQuestionPages <= maxVisiblePages) {
+                          // 如果总页数少于等于7，显示所有页码
+                          for (let i = 1; i <= totalQuestionPages; i++) {
+                            pages.push(i);
+                          }
+                        } else {
+                          // 始终显示第一页
+                          pages.push(1);
+                          
+                          if (questionPage <= 4) {
+                            // 当前页在前4页，显示 1 2 3 4 5 ... 最后一页
+                            for (let i = 2; i <= 5; i++) {
+                              pages.push(i);
+                            }
+                            pages.push('ellipsis');
+                            pages.push(totalQuestionPages);
+                          } else if (questionPage >= totalQuestionPages - 3) {
+                            // 当前页在后4页，显示 1 ... 倒数4页 最后一页
+                            pages.push('ellipsis');
+                            for (let i = totalQuestionPages - 4; i <= totalQuestionPages; i++) {
+                              pages.push(i);
+                            }
+                          } else {
+                            // 当前页在中间，显示 1 ... 当前页前后各2页 ... 最后一页
+                            pages.push('ellipsis');
+                            for (let i = questionPage - 2; i <= questionPage + 2; i++) {
+                              pages.push(i);
+                            }
+                            pages.push('ellipsis');
+                            pages.push(totalQuestionPages);
+                          }
+                        }
+                        
+                        return pages.map((page, index) => {
+                          if (page === 'ellipsis') {
+                            return (
+                              <PaginationItem key={`ellipsis-${index}`}>
+                                <PaginationEllipsis />
+                              </PaginationItem>
+                            );
+                          }
+                          return (
+                            <PaginationItem key={page}>
+                              <PaginationLink
+                                onClick={() => handleQuestionPageChange(page)}
+                                isActive={questionPage === page}
+                                className="text-sm cursor-pointer"
+                              >
+                                {page}
+                              </PaginationLink>
+                            </PaginationItem>
+                          );
+                        });
+                      })()}
+                      <PaginationItem>
+                        <button
+                          onClick={() => handleQuestionPageChange(Math.min(totalQuestionPages, questionPage + 1))}
+                          className={"text-sm px-3 py-1 rounded border ml-1 " + (questionPage === totalQuestionPages ? 'pointer-events-none opacity-50' : 'cursor-pointer')}
+                          disabled={questionPage === totalQuestionPages}
+                        >下一页</button>
+                      </PaginationItem>
+                    </PaginationContent>
+                  </Pagination>
+                </div>
+              </div>
             )}
             <Dialog open={!!editingQuestion} onOpenChange={open => { if (!open) setEditingQuestion(null); }}>
               <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">

@@ -53,6 +53,12 @@ public class ExamController {
         adminService.exportExamResults(request, response);
     }
 
+    @PostMapping("/exam-results/delete")
+    public Result<?> deleteExamRecord(@RequestBody Map<String, Object> request) {
+        adminService.deleteExamRecord(request.get("recordId").toString());
+        return Result.success("考试记录删除成功");
+    }
+
     @PostMapping("/start")
     public Result<?> startExam(@RequestBody StartExamDTO request) {
         String recordId = examService.startExam(request);

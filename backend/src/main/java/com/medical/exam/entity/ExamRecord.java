@@ -42,4 +42,7 @@ public class ExamRecord {
     private String remark;
     // 0 正常 1 作废
     private Integer retake;
+    // 逻辑删除标识
+    @Column(isLogicDelete = true)
+    private Boolean deleted;
 }

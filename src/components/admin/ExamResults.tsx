@@ -5,13 +5,23 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, PaginationEllipsis } from '@/components/ui/pagination';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Eye, RotateCcw, Download, Trash2 } from 'lucide-react';
 import { post } from '@/lib/request';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 interface ExamResult {
   recordId: string;
@@ -91,6 +101,8 @@ const ExamResults: React.FC = () => {
   const [retakeDialogOpen, setRetakeDialogOpen] = useState(false);
   const [retakeType, setRetakeType] = useState<'single' | 'batch'>('single');
   const [retakeRecordId, setRetakeRecordId] = useState<string>('');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [recordToDelete, setRecordToDelete] = useState<ExamResult | null>(null);
 
   // 答题详情展开状态
   const [expanded, setExpanded] = React.useState<string | null>(null);
@@ -105,21 +117,49 @@ const ExamResults: React.FC = () => {
   // 获取考试结果列表
   const fetchResults = async () => {
     try {
-      const params = {
-        status: filterStatus === 'all' ? undefined : filterStatus,
-        passStatus: passStatus === 'all' ? undefined : passStatus,
-        retakeStatus: retakeStatus === 'all' ? undefined : retakeStatus,
-        examName: examNameDebounced || undefined,
-        keyword: searchTerm,
-        page: currentPage,
-        size: pageSize
+      // 构建查询参数，移除空值和'all'值
+      const params: any = {
+        pageNumber: currentPage,
+        pageSize: pageSize
       };
+      
+      // 只添加有效的筛选条件
+      // 如果状态是"已删除"，使用特殊的查询逻辑
+      if (filterStatus === 'deleted') {
+        // 查询已删除的记录
+        params.includeDeleted = true;
+        params.onlyDeleted = true;
+        // 不设置 status 参数，因为已删除记录可能有各种状态
+      } else {
+        // 其他状态正常筛选（默认只查询未删除的记录）
+        params.includeDeleted = false;
+        params.onlyDeleted = false;
+        if (filterStatus && filterStatus !== 'all') {
+          params.status = filterStatus;
+        }
+      }
+      
+      if (passStatus && passStatus !== 'all') {
+        params.passStatus = passStatus;
+      }
+      if (retakeStatus && retakeStatus !== 'all') {
+        params.retakeStatus = retakeStatus;
+      }
+      if (examNameDebounced && examNameDebounced.trim()) {
+        params.examName = examNameDebounced.trim();
+      }
+      if (searchTerm && searchTerm.trim()) {
+        params.keyword = searchTerm.trim();
+      }
+      
       const res = await post('/exam/exam-results', params);
       
       // 检查响应数据是否存在
       if (res && res.data) {
-        setResults(res.data.records || []);
-        setTotal(res.data.totalRow || 0);
+        // 兼容不同的响应结构
+        const pageData = res.data;
+        setResults(pageData.records || pageData.list || []);
+        setTotal(pageData.totalRow || pageData.total || 0);
       } else {
         setResults([]);
         setTotal(0);
@@ -156,22 +196,17 @@ const ExamResults: React.FC = () => {
     // eslint-disable-next-line
   }, [filterStatus, passStatus, retakeStatus, examNameDebounced, searchTerm, currentPage]);
 
-  // 排序：待开始 > 进行中 > 已完成/超时
-  const sortedResults = [...results].sort((a, b) => {
-    const statusOrder = {
-      'pending': 0,
-      'notStarted': 0,
-      'in-progress': 1,
-      'completed': 2,
-      'timeout': 2
-    };
-    return (statusOrder[a.status || ''] ?? 99) - (statusOrder[b.status || ''] ?? 99);
-  });
-  const paginatedResults = sortedResults;
+  // 直接使用后端返回的数据，不进行前端排序
+  const paginatedResults = results;
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const getStatusBadge = (status: string) => {
+    // 如果当前筛选的是"已删除"状态，显示"已删除"标识
+    if (filterStatus === 'deleted') {
+      return <Badge variant="destructive" className="bg-red-100 text-red-800">已删除</Badge>;
+    }
+    
     switch (status) {
       case 'completed':
         return <Badge variant="default" className="bg-green-100 text-green-800">已完成</Badge>;
@@ -279,6 +314,45 @@ const ExamResults: React.FC = () => {
     }
   };
 
+  // 删除考试记录
+  const handleDelete = (result: ExamResult) => {
+    console.log('点击删除按钮，考试记录:', result);
+    setRecordToDelete(result);
+    setDeleteDialogOpen(true);
+  };
+
+  // 确认删除
+  const confirmDelete = async () => {
+    if (!recordToDelete) return;
+    
+    try {
+      console.log('开始删除考试记录，recordId:', recordToDelete.recordId);
+      const response = await post('/exam/exam-results/delete', { recordId: recordToDelete.recordId });
+      console.log('删除接口响应:', response);
+      toast({
+        title: "删除成功",
+        description: "考试记录已删除"
+      });
+      setDeleteDialogOpen(false);
+      setRecordToDelete(null);
+      fetchResults();
+    } catch (error: any) {
+      console.error('删除考试记录失败:', error);
+      console.error('删除接口错误详情:', {
+        message: error?.message,
+        response: error?.response,
+        status: error?.response?.status,
+        data: error?.response?.data
+      });
+      const errorMessage = error?.response?.data?.message || error?.message || "删除考试记录失败，请重试";
+      toast({
+        title: "删除失败",
+        description: errorMessage,
+        variant: "destructive"
+      });
+    }
+  };
+
   // 查看详情
   const handleViewDetail = async (result: ExamResult) => {
     setLoadingDetail(true);
@@ -306,15 +380,36 @@ const ExamResults: React.FC = () => {
 
   const exportResults = async () => {
     try {
-      // 构建查询参数
-      const queryParams = {
-        category: filterStatus,
-        status: filterStatus,
-        keyword: searchTerm,
-        passStatus: passStatus,
-        retakeStatus: retakeStatus,
-        examName: examNameDebounced
-      };
+      // 构建查询参数（导出时不需要分页参数，获取所有符合条件的数据）
+      const queryParams: any = {};
+
+      // 根据筛选状态设置参数
+      if (filterStatus === 'deleted') {
+        // 筛选已删除的记录
+        queryParams.includeDeleted = true;
+        queryParams.onlyDeleted = true;
+        // 不设置 status 参数，因为已删除记录可能有各种状态
+      } else {
+        // 其他状态正常筛选（默认只查询未删除的记录）
+        queryParams.includeDeleted = false;
+        queryParams.onlyDeleted = false;
+        if (filterStatus && filterStatus !== 'all') {
+          queryParams.status = filterStatus;
+        }
+      }
+      
+      if (passStatus && passStatus !== 'all') {
+        queryParams.passStatus = passStatus;
+      }
+      if (retakeStatus && retakeStatus !== 'all') {
+        queryParams.retakeStatus = retakeStatus;
+      }
+      if (examNameDebounced && examNameDebounced.trim()) {
+        queryParams.examName = examNameDebounced.trim();
+      }
+      if (searchTerm && searchTerm.trim()) {
+        queryParams.keyword = searchTerm.trim();
+      }
 
       // 调用后端导出API
       const response = await fetch(`${import.meta.env.VITE_API_BASE}/exam/exam-results/export`, {
@@ -410,7 +505,7 @@ const ExamResults: React.FC = () => {
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-gray-800">考试结果</h2>
         <div className="flex space-x-2">
-          {selectedResults.length > 0 && paginatedResults.some(r => r.status === 'completed' && selectedResults.includes(r.recordId)) && (
+          {selectedResults.length > 0 && paginatedResults.some(r => r.status === 'completed' && selectedResults.includes(r.recordId)) && filterStatus !== 'deleted' && (
             <Button onClick={handleBatchRetake} variant="outline">
               <RotateCcw className="w-4 h-4 mr-2" />
               批量重新考试 ({selectedResults.length})
@@ -477,6 +572,7 @@ const ExamResults: React.FC = () => {
               <SelectItem value="completed">已完成</SelectItem>
               <SelectItem value="in-progress">进行中</SelectItem>
               <SelectItem value="timeout">超时</SelectItem>
+              <SelectItem value="deleted">已删除</SelectItem>
             </SelectContent>
           </Select>
 
@@ -501,6 +597,7 @@ const ExamResults: React.FC = () => {
               <SelectItem value="retake">重考</SelectItem>
             </SelectContent>
           </Select>
+
             <Button 
               variant="outline" 
               onClick={() => {
@@ -523,10 +620,12 @@ const ExamResults: React.FC = () => {
             <TableHeader>
               <TableRow className="bg-gray-50">
                 <TableHead className="w-12">
-                  <Checkbox
-                    checked={paginatedResults.filter(r => r.status === 'completed').length > 0 && paginatedResults.filter(r => r.status === 'completed').every(r => selectedResults.includes(r.recordId))}
-                    onCheckedChange={handleSelectAll}
-                  />
+                  {filterStatus !== 'deleted' && (
+                    <Checkbox
+                      checked={paginatedResults.filter(r => r.status === 'completed').length > 0 && paginatedResults.filter(r => r.status === 'completed').every(r => selectedResults.includes(r.recordId))}
+                      onCheckedChange={handleSelectAll}
+                    />
+                  )}
                 </TableHead>
                 <TableHead className="font-bold text-gray-900">考生姓名</TableHead>
                 <TableHead className="font-bold text-gray-900">身份证号</TableHead>
@@ -546,7 +645,7 @@ const ExamResults: React.FC = () => {
                 return (
                   <TableRow key={rowKey}>
                   <TableCell>
-                      {result.status === 'completed' && (
+                      {result.status === 'completed' && filterStatus !== 'deleted' && (
                     <Checkbox
                           checked={selectedResults.includes(rowKey)}
                           onCheckedChange={(checked) => {
@@ -594,17 +693,32 @@ const ExamResults: React.FC = () => {
                         size="sm"
                         variant="outline"
                         onClick={() => handleViewDetail(result)}
+                        title="查看详情"
                       >
                         <Eye className="w-4 h-4" />
                       </Button>
-                      {result.status === 'completed' && (
+                      {/* 已完成且未删除的记录才能重考 */}
+                      {result.status === 'completed' && filterStatus !== 'deleted' && (
                         <Button
                           size="sm"
                           variant="outline"
-                            onClick={() => handleSingleRetake(result.recordId)}
-                            disabled={false}
+                          onClick={() => handleSingleRetake(result.recordId)}
+                          disabled={false}
+                          title="重新考试"
                         >
                           <RotateCcw className="w-4 h-4" />
+                        </Button>
+                      )}
+                      {/* 已删除的记录不显示删除按钮 */}
+                      {filterStatus !== 'deleted' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleDelete(result)}
+                          title="删除记录"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <Trash2 className="w-4 h-4" />
                         </Button>
                       )}
                     </div>
@@ -616,37 +730,96 @@ const ExamResults: React.FC = () => {
           </Table>
         </div>
         {/* 分页 */}
-        <div className="flex flex-col md:flex-row md:justify-between md:items-center mt-6 gap-2">
-          <div className="text-sm text-gray-500 mb-2 md:mb-0 whitespace-nowrap">
-            {total === 0
-              ? '0 到 0 条，共 0 条记录'
-              : `${(currentPage - 1) * pageSize + 1} 到 ${Math.min(currentPage * pageSize, total)} 条，共 ${total} 条记录`}
-          </div>
-            <Pagination>
-              <PaginationContent>
+        {totalPages > 1 && (
+          <div className="flex flex-col md:flex-row md:justify-between md:items-center mt-6 gap-2">
+            <div className="text-sm text-gray-500 mb-2 md:mb-0 whitespace-nowrap">
+              {total === 0
+                ? '暂无记录'
+                : `第 ${currentPage} 页，共 ${totalPages} 页 | 显示 ${(currentPage - 1) * pageSize + 1} - ${Math.min(currentPage * pageSize, total)} 条，共 ${total} 条记录`}
+            </div>
+            <div className="w-full md:w-auto min-w-0">
+              <Pagination className="max-w-full">
+                <PaginationContent className="flex-wrap justify-center gap-1">
                 <PaginationItem>
                   <PaginationPrevious 
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                     className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                >上一页</PaginationPrevious>
+                  >
+                    上一页
+                  </PaginationPrevious>
                 </PaginationItem>
-              <PaginationItem>
-                    <PaginationLink
-                  isActive
-                  className="font-bold text-blue-700 cursor-default"
-                    >
-                  {currentPage}
-                    </PaginationLink>
-                  </PaginationItem>
+                {/* 显示页码 - 智能分页，最多显示7个页码，使用省略号 */}
+                {(() => {
+                  const maxVisiblePages = 7;
+                  const pages: (number | 'ellipsis')[] = [];
+                  
+                  if (totalPages <= maxVisiblePages) {
+                    // 如果总页数少于等于7，显示所有页码
+                    for (let i = 1; i <= totalPages; i++) {
+                      pages.push(i);
+                    }
+                  } else {
+                    // 始终显示第一页
+                    pages.push(1);
+                    
+                    if (currentPage <= 4) {
+                      // 当前页在前4页，显示 1 2 3 4 5 ... 最后一页
+                      for (let i = 2; i <= 5; i++) {
+                        pages.push(i);
+                      }
+                      pages.push('ellipsis');
+                      pages.push(totalPages);
+                    } else if (currentPage >= totalPages - 3) {
+                      // 当前页在后4页，显示 1 ... 倒数4页 最后一页
+                      pages.push('ellipsis');
+                      for (let i = totalPages - 4; i <= totalPages; i++) {
+                        pages.push(i);
+                      }
+                    } else {
+                      // 当前页在中间，显示 1 ... 当前页前后各2页 ... 最后一页
+                      pages.push('ellipsis');
+                      for (let i = currentPage - 2; i <= currentPage + 2; i++) {
+                        pages.push(i);
+                      }
+                      pages.push('ellipsis');
+                      pages.push(totalPages);
+                    }
+                  }
+                  
+                  return pages.map((page, index) => {
+                    if (page === 'ellipsis') {
+                      return (
+                        <PaginationItem key={`ellipsis-${index}`}>
+                          <PaginationEllipsis />
+                        </PaginationItem>
+                      );
+                    }
+                    return (
+                      <PaginationItem key={page}>
+                        <PaginationLink
+                          onClick={() => setCurrentPage(page)}
+                          isActive={currentPage === page}
+                          className={currentPage === page ? 'font-bold text-blue-700 bg-blue-50' : 'cursor-pointer'}
+                        >
+                          {page}
+                        </PaginationLink>
+                      </PaginationItem>
+                    );
+                  });
+                })()}
                 <PaginationItem>
                   <PaginationNext 
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                     className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                >下一页</PaginationNext>
+                  >
+                    下一页
+                  </PaginationNext>
                 </PaginationItem>
-              </PaginationContent>
-            </Pagination>
+                </PaginationContent>
+              </Pagination>
+            </div>
           </div>
+        )}
       </Card>
       {/* 详情弹窗优化 */}
       <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
@@ -690,6 +863,59 @@ const ExamResults: React.FC = () => {
                 </div>
                             {optionsToShow && optionsToShow.length > 0 && expanded === String(idx) && (
                               <div className="pl-8 pb-2">
+                                {/* 多选题答案顺序显示 */}
+                                {ans.questionType === 'multi' && !isJudge && (
+                                  <div className="mb-3 space-y-2">
+                                    {/* 正确答案顺序 */}
+                                    {(() => {
+                                      let correctIndexes: number[] = [];
+                                      if (Array.isArray(ans.correctAnswer)) {
+                                        correctIndexes = ans.correctAnswer.map((idx: any) => Number(idx));
+                                      } else if (typeof ans.correctAnswer === 'string') {
+                                        const ca = ans.correctAnswer.trim();
+                                        if (ca.includes(',')) {
+                                          // 索引格式：如 "1,3,0,2"
+                                          correctIndexes = ca.split(',').map((s: string) => Number(s.trim()));
+                                        } else if (/^[A-Za-z]+$/.test(ca)) {
+                                          // 字母格式：如 "BDAC"，转换为索引数组
+                                          correctIndexes = ca.toUpperCase().split('').map((char: string) => {
+                                            return char.charCodeAt(0) - 'A'.charCodeAt(0);
+                                          });
+                                        } else {
+                                          correctIndexes = [Number(ca)];
+                                        }
+                                      }
+                                      const correctOrder = correctIndexes.map(idx => OPTION_LETTERS[idx] || '').filter(Boolean).join('→');
+                                      return correctOrder ? (
+                                        <div className="text-sm">
+                                          <span className="font-semibold text-gray-700">正确答案顺序：</span>
+                                          <span className="ml-2 px-2 py-1 bg-green-100 text-green-800 font-bold rounded">{correctOrder}</span>
+                                        </div>
+                                      ) : null;
+                                    })()}
+                                    {/* 用户答案顺序 */}
+                                    {(() => {
+                                      let userIndexes: number[] = [];
+                                      if (Array.isArray(ans.userAnswer)) {
+                                        userIndexes = ans.userAnswer.map((idx: any) => Number(idx));
+                                      } else if (typeof ans.userAnswer === 'string') {
+                                        const ua = ans.userAnswer.trim();
+                                        if (ua && ua.includes(',')) {
+                                          userIndexes = ua.split(',').map((s: string) => Number(s.trim()));
+                                        } else if (ua) {
+                                          userIndexes = [Number(ua)];
+                                        }
+                                      }
+                                      const userOrder = userIndexes.map(idx => OPTION_LETTERS[idx] || '').filter(Boolean).join('→');
+                                      return userOrder ? (
+                                        <div className="text-sm">
+                                          <span className="font-semibold text-gray-700">您的答案顺序：</span>
+                                          <span className={`ml-2 px-2 py-1 font-bold rounded ${ans.isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{userOrder}</span>
+                                        </div>
+                                      ) : null;
+                                    })()}
+                                  </div>
+                                )}
                                 <ul className="space-y-1">
                                   {optionsToShow.map((opt: string, i: number) => {
                                     let displayOpt = opt;
@@ -715,15 +941,21 @@ const ExamResults: React.FC = () => {
                                       let correctIndexes: number[] = [];
                                       let userIndexes: number[] = [];
                                       
-                                      // 处理正确答案
+                                      // 处理正确答案（支持索引格式和字母格式）
                                       if (Array.isArray(ans.correctAnswer)) {
                                         correctIndexes = ans.correctAnswer.map((idx: any) => Number(idx));
                                       } else if (typeof ans.correctAnswer === 'string') {
-                                        // 支持多选格式 "0,1,2,3,4,5"
-                                        if (ans.correctAnswer.includes(',')) {
-                                          correctIndexes = ans.correctAnswer.split(',').map((s: string) => Number(s.trim()));
+                                        const ca = ans.correctAnswer.trim();
+                                        if (ca.includes(',')) {
+                                          // 索引格式：如 "1,3,0,2"
+                                          correctIndexes = ca.split(',').map((s: string) => Number(s.trim()));
+                                        } else if (/^[A-Za-z]+$/.test(ca)) {
+                                          // 字母格式：如 "BDAC"，转换为索引数组
+                                          correctIndexes = ca.toUpperCase().split('').map((char: string) => {
+                                            return char.charCodeAt(0) - 'A'.charCodeAt(0);
+                                          });
                                         } else {
-                                          correctIndexes = [Number(ans.correctAnswer)];
+                                          correctIndexes = [Number(ca)];
                                         }
                                       } else {
                                         correctIndexes = [Number(ans.correctAnswer)];
@@ -733,10 +965,14 @@ const ExamResults: React.FC = () => {
                                       if (Array.isArray(ans.userAnswer)) {
                                         userIndexes = ans.userAnswer.map((idx: any) => Number(idx));
                                       } else if (typeof ans.userAnswer === 'string') {
-                                        if (ans.userAnswer.includes(',')) {
-                                          userIndexes = ans.userAnswer.split(',').map((s: string) => Number(s.trim()));
+                                        const ua = ans.userAnswer.trim();
+                                        if (ua === '') {
+                                          // 未作答：保持 userIndexes 为空数组，不高亮任何选项
+                                          userIndexes = [];
+                                        } else if (ua.includes(',')) {
+                                          userIndexes = ua.split(',').map((s: string) => Number(s.trim()));
                                         } else {
-                                          userIndexes = [Number(ans.userAnswer)];
+                                          userIndexes = [Number(ua)];
                                         }
                                       } else {
                                         userIndexes = [Number(ans.userAnswer)];
@@ -753,6 +989,45 @@ const ExamResults: React.FC = () => {
                                     } else if (isUserSelected) {
                                       highlightClass = 'bg-red-100 text-red-700 font-bold'; // 选错
                                     }
+                                    // 获取选项在选择顺序中的位置（仅多选题）
+                                    let correctOrderIndex: number | null = null;
+                                    let userOrderIndex: number | null = null;
+                                    if (ans.questionType === 'multi' && !isJudge) {
+                                      // 获取正确答案中的顺序（支持索引格式和字母格式）
+                                      let correctIndexes: number[] = [];
+                                      if (Array.isArray(ans.correctAnswer)) {
+                                        correctIndexes = ans.correctAnswer.map((idx: any) => Number(idx));
+                                      } else if (typeof ans.correctAnswer === 'string') {
+                                        const ca = ans.correctAnswer.trim();
+                                        if (ca.includes(',')) {
+                                          // 索引格式：如 "1,3,0,2"
+                                          correctIndexes = ca.split(',').map((s: string) => Number(s.trim()));
+                                        } else if (/^[A-Za-z]+$/.test(ca)) {
+                                          // 字母格式：如 "BDAC"，转换为索引数组
+                                          correctIndexes = ca.toUpperCase().split('').map((char: string) => {
+                                            return char.charCodeAt(0) - 'A'.charCodeAt(0);
+                                          });
+                                        }
+                                      }
+                                      if (correctIndexes.includes(i)) {
+                                        correctOrderIndex = correctIndexes.indexOf(i) + 1;
+                                      }
+                                      
+                                      // 获取用户答案中的顺序
+                                      let userIndexes: number[] = [];
+                                      if (Array.isArray(ans.userAnswer)) {
+                                        userIndexes = ans.userAnswer.map((idx: any) => Number(idx));
+                                      } else if (typeof ans.userAnswer === 'string') {
+                                        const ua = ans.userAnswer.trim();
+                                        if (ua && ua.includes(',')) {
+                                          userIndexes = ua.split(',').map((s: string) => Number(s.trim()));
+                                        }
+                                      }
+                                      if (userIndexes.includes(i)) {
+                                        userOrderIndex = userIndexes.indexOf(i) + 1;
+                                      }
+                                    }
+                                    
                                     return (
                                       <li
                                         key={i}
@@ -760,7 +1035,22 @@ const ExamResults: React.FC = () => {
                                         style={{ fontSize: '0.95em' }}
                                       >
                                         <span className="inline-block w-5 text-center mr-2 font-bold">{letter}.</span>
-                                        <span className="break-all">{displayOpt}</span>
+                                        <span className="break-all flex-1">{displayOpt}</span>
+                                        {/* 显示顺序信息（仅多选题） */}
+                                        {ans.questionType === 'multi' && !isJudge && (correctOrderIndex !== null || userOrderIndex !== null) && (
+                                          <div className="ml-2 flex items-center space-x-1">
+                                            {correctOrderIndex !== null && (
+                                              <span className="px-1.5 py-0.5 bg-green-200 text-green-800 text-xs font-bold rounded">
+                                                正确答案第{correctOrderIndex}个
+                                              </span>
+                                            )}
+                                            {userOrderIndex !== null && (
+                                              <span className={`px-1.5 py-0.5 text-xs font-bold rounded ${ans.isCorrect ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
+                                                您的第{userOrderIndex}个选择
+                                              </span>
+                                            )}
+                                          </div>
+                                        )}
                                       </li>
                                     );
                                   })}
@@ -845,6 +1135,27 @@ const ExamResults: React.FC = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* 删除确认对话框 */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除该考试记录吗？此操作将逻辑删除该记录，删除后可以通过筛选条件查看已删除的记录。此操作不可撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmDelete}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {results.length === 0 && (
         <Card className="p-12 text-center">

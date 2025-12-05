@@ -10,7 +10,7 @@ import { Trash2, Edit, Plus, Search } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Pagination, PaginationContent, PaginationItem, PaginationLink } from '@/components/ui/pagination';
+import SmartPagination from '@/components/ui/smart-pagination';
 import { request } from '@/lib/request';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
@@ -318,39 +318,17 @@ const RoleManager = () => {
         )}
       </Card>
 
-      <div className="mt-6 flex flex-row justify-between items-center flex-nowrap gap-4">
-        <p className="text-sm text-gray-600 whitespace-nowrap">
+      <div className="mt-6 flex flex-col md:flex-row md:justify-between md:items-center gap-2">
+        <p className="text-sm text-gray-600 whitespace-nowrap mb-2 md:mb-0">
           显示 {(currentPage - 1) * pageSize + 1} 到 {Math.min(currentPage * pageSize, totalRows)} 条，共 {totalRows} 条记录
         </p>
-        <Pagination>
-          <PaginationContent>
-            <PaginationItem>
-              <button
-                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                className={"text-sm px-3 py-1 rounded border mr-1 " + (currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer')}
-                disabled={currentPage === 1}
-              >上一页</button>
-            </PaginationItem>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-              <PaginationItem key={page}>
-                <PaginationLink
-                  onClick={() => setCurrentPage(page)}
-                  isActive={currentPage === page}
-                  className="text-sm cursor-pointer"
-                >
-                  {page}
-                </PaginationLink>
-              </PaginationItem>
-            ))}
-            <PaginationItem>
-              <button
-                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                className={"text-sm px-3 py-1 rounded border ml-1 " + (currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer')}
-                disabled={currentPage === totalPages}
-              >下一页</button>
-            </PaginationItem>
-          </PaginationContent>
-        </Pagination>
+        <SmartPagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+          prevText="上一页"
+          nextText="下一页"
+        />
       </div>
     </div>
   );
