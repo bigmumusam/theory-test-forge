@@ -1,73 +1,61 @@
-# Welcome to your Lovable project
+## 项目简介
 
-## Project info
+**Theory Test Forge** 是一个用于在线理论考试与练习的系统，包含：
 
-**URL**: https://lovable.dev/projects/7e916404-771c-4a52-a31a-e4718767b501
+- **考生端**：考试列表、考试作答、答题卡、计时与自动交卷等能力  
+- **管理端**：题库管理、试卷生成、考试配置、用户与角色管理、成绩查询等  
+- **后端服务**：提供题库、考试记录、成绩统计等 REST API，并集成认证与权限控制
 
-## How can I edit this code?
+## 技术栈概览
 
-There are several ways of editing your application.
+- **前端**：Vite + React + TypeScript + Tailwind CSS + shadcn-ui  
+- **路由与状态**：`react-router-dom`、`@tanstack/react-query` 等  
+- **后端**：Spring Boot 3、MyBatis-Flex、Spring Security、JWT  
+- **数据库**：MySQL（连接配置见 `backend/src/main/resources/application-*.yml`）
 
-**Use Lovable**
+## 本地开发与运行
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/7e916404-771c-4a52-a31a-e4718767b501) and start prompting.
+- **环境要求**
+  - Node.js（建议 ≥ 18）
+  - npm 或 pnpm
+  - JDK 21
+  - MySQL 数据库
 
-Changes made via Lovable will be committed automatically to this repo.
+- **初始化步骤**
+  1. 克隆仓库并进入项目根目录  
+  2. 在数据库中创建对应库，并根据 `backend/src/main/resources/sql/schema.sql` 初始化表结构  
+  3. 根据本地环境修改 `backend/src/main/resources/application-dev.yml` 中的数据库连接信息
 
-**Use your preferred IDE**
+### 启动前端
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+在项目根目录执行：
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+```bash
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+默认通过 `http://localhost:5173` 访问前端应用（端口以终端输出为准）。
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### 启动后端
 
-**Use GitHub Codespaces**
+进入 `backend` 目录：
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+```bash
+mvn spring-boot:run
+```
 
-## What technologies are used for this project?
+后端默认运行在 `http://localhost:8080`（具体端口以配置为准）。
 
-This project is built with:
+## 常用脚本（前端）
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+- **开发调试**：`npm run dev`  
+- **生产构建**：`npm run build`  
+- **预览构建结果**：`npm run preview`  
+- **代码检查**：`npm run lint`
 
-## How can I deploy this project?
+## 后续计划（示例）
 
-Simply open [Lovable](https://lovable.dev/projects/7e916404-771c-4a52-a31a-e4718767b501) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+- **多选题顺序化记录与展示**（角标顺序、可调整顺序等交互优化）  
+- 考试记录与错题分析页面优化  
+- 权限与角色配置的可视化配置体验提升

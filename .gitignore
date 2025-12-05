@@ -157,3 +157,14 @@ dist-ssr
 /backend/target/generated-sources/annotations/com/medical/exam/entity/table/ExamForceRetakeTableDef.java
 /backend/.factorypath
 /backend/target/generated-sources/annotations/com/medical/exam/entity/table/ExamForceRetakeTableDef.java
+/backend/target/classes/com/medical/exam/dto/PaperExamStatusDTO.class
+/backend/target/classes/com/medical/exam/dto/PaperExamStatusDTO$PaperExamStatusDTOBuilder.class
+/backend/target/classes/com/medical/exam/entity/ExamForceRetake.class
+/backend/target/classes/com/medical/exam/entity/ExamForceRetake$ExamForceRetakeBuilder.class
+/backend/target/classes/com/medical/exam/entity/table/ExamForceRetakeTableDef.class
+/backend/target/classes/com/medical/exam/mapper/ExamForceRetakeMapper.class
+/backend/target/classes/com/medical/exam/vo/PaperExamDetailVo.class
+/backend/target/classes/sql/add_user_category.sql
+/backend/target/classes/sql/remove_paper_user_categories.sql
+/backend/target/classes/sql/update_user_category_multiselect.sql
+/backend/.classpath
