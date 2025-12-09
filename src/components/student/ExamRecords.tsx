@@ -32,6 +32,8 @@ interface ExamRecordDetail {
   answers: Array<{
     questionId: string;
     questionContent: string;
+    questionType?: string;
+    questionOptions?: string[];
     userAnswer: string;
     correctAnswer: string;
     isCorrect: boolean;
@@ -335,30 +337,227 @@ const ExamRecords: React.FC = () => {
               <div>
                 <h3 className="text-lg font-semibold mb-4">答题详情</h3>
                 <div className="space-y-4">
-                  {selectedRecord.answers.map((answer, index) => (
-                    <div key={answer.questionId} className="border rounded-lg p-4">
-                      <div className="flex justify-between items-start mb-2">
-                        <span className="text-sm text-gray-600">第{index + 1}题</span>
-                        <div className="flex items-center space-x-2">
-                          <span className="text-sm text-gray-600">得分：{answer.score}</span>
-                          <Badge variant={answer.isCorrect ? "default" : "destructive"}>
-                            {answer.isCorrect ? "正确" : "错误"}
-                          </Badge>
+                  {selectedRecord.answers.map((answer, index) => {
+                    // 判断题类型标识
+                    const JUDGE_TYPES = ['judgment', '判断题'];
+                    const OPTION_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+                    const isJudge = answer.questionType && JUDGE_TYPES.includes(answer.questionType);
+                    let optionsToShow: string[] = answer.questionOptions || [];
+                    if (isJudge) {
+                      optionsToShow = ['正确', '错误'];
+                    }
+                    
+                    // 解析答案的函数
+                    const parseAndMapAnswers = (answerStr: string | string[]): number[] => {
+                      if (Array.isArray(answerStr)) {
+                        return answerStr.map((idx: any) => Number(idx));
+                      }
+                      if (typeof answerStr === 'string') {
+                        const a = answerStr.trim();
+                        if (a === '') return [];
+                        if (a.includes(',')) {
+                          return a.split(',').map((s: string) => Number(s.trim()));
+                        } else if (/^[A-Za-z]+$/.test(a)) {
+                          // 字母格式：如 "BDAC"，转换为索引数组
+                          return a.toUpperCase().split('').map((char: string) => {
+                            return char.charCodeAt(0) - 'A'.charCodeAt(0);
+                          });
+                        } else {
+                          return [Number(a)];
+                        }
+                      }
+                      return [Number(answerStr)];
+                    };
+                    
+                    return (
+                      <div key={answer.questionId} className="border rounded-lg p-4">
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="text-sm text-gray-600">第{index + 1}题</span>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-sm text-gray-600">得分：{answer.score}</span>
+                            <Badge variant={answer.isCorrect ? "default" : "destructive"}>
+                              {answer.isCorrect ? "正确" : "错误"}
+                            </Badge>
+                          </div>
                         </div>
+                        <p className="font-medium mb-3">{answer.questionContent}</p>
+                        
+                        {/* 多选题答案顺序显示 */}
+                        {answer.questionType === 'multi' && !isJudge && (
+                          <div className="mb-3 space-y-2">
+                            {/* 正确答案顺序 */}
+                            {(() => {
+                              const correctIndexes = parseAndMapAnswers(answer.correctAnswer);
+                              const correctOrder = correctIndexes.map(idx => OPTION_LETTERS[idx] || '').filter(Boolean).join('→');
+                              return correctOrder ? (
+                                <div className="text-sm">
+                                  <span className="font-semibold text-gray-700">正确答案顺序：</span>
+                                  <span className="ml-2 px-2 py-1 bg-green-100 text-green-800 font-bold rounded">{correctOrder}</span>
+                                </div>
+                              ) : null;
+                            })()}
+                            {/* 用户答案顺序 */}
+                            <div className="text-sm">
+                              <span className="font-semibold text-gray-700">您的答案顺序：</span>
+                              {(() => {
+                                const userIndexes = parseAndMapAnswers(answer.userAnswer);
+                                const userOrder = userIndexes.map(idx => OPTION_LETTERS[idx] || '').filter(Boolean).join('→');
+                                return userOrder ? (
+                                  <span className={`ml-2 px-2 py-1 font-bold rounded ${answer.isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{userOrder}</span>
+                                ) : (
+                                  <span className="ml-2 px-2 py-1 font-bold rounded bg-gray-100 text-gray-500 italic">未作答</span>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* 显示选项（如果有） */}
+                        {optionsToShow && optionsToShow.length > 0 ? (
+                          <ul className="space-y-1">
+                            {optionsToShow.map((opt: string, i: number) => {
+                              // 根据题目类型处理答案比较
+                              let isCorrect = false;
+                              let isUserSelected = false;
+                              
+                              if (isJudge) {
+                                // 判断题：比较字符串答案
+                                const correctAnswer = parseAndMapAnswers(answer.correctAnswer)[0];
+                                const userAnswer = parseAndMapAnswers(answer.userAnswer)[0];
+                                isCorrect = correctAnswer === i;
+                                isUserSelected = userAnswer === i;
+                              } else {
+                                // 选择题：比较数字索引
+                                const correctIndexes = parseAndMapAnswers(answer.correctAnswer);
+                                const userIndexes = parseAndMapAnswers(answer.userAnswer);
+                                
+                                isCorrect = correctIndexes.includes(i);
+                                isUserSelected = userIndexes.includes(i);
+                              }
+                              
+                              let highlightClass = '';
+                              if (isCorrect && isUserSelected) {
+                                highlightClass = 'bg-green-100 text-green-700 font-bold'; // 选对
+                              } else if (isCorrect) {
+                                highlightClass = 'bg-green-50 text-green-700 font-bold'; // 正确但未选
+                              } else if (isUserSelected) {
+                                highlightClass = 'bg-red-100 text-red-700 font-bold'; // 选错
+                              }
+                              
+                              // 获取选项在选择顺序中的位置（仅多选题）
+                              let correctOrderIndex: number | null = null;
+                              let userOrderIndex: number | null = null;
+                              if (answer.questionType === 'multi' && !isJudge) {
+                                const correctIndexes = parseAndMapAnswers(answer.correctAnswer);
+                                if (correctIndexes.includes(i)) {
+                                  correctOrderIndex = correctIndexes.indexOf(i) + 1;
+                                }
+                                const userIndexes = parseAndMapAnswers(answer.userAnswer);
+                                if (userIndexes.includes(i)) {
+                                  userOrderIndex = userIndexes.indexOf(i) + 1;
+                                }
+                              }
+                              
+                              return (
+                                <li
+                                  key={i}
+                                  className={`flex items-center w-full px-4 py-1 rounded text-sm transition-all ${highlightClass}`}
+                                >
+                                  <span className="inline-block w-5 text-center mr-2 font-bold">{OPTION_LETTERS[i] || ''}.</span>
+                                  <span className="break-all flex-1">{opt}</span>
+                                  {/* 显示顺序信息（仅多选题） */}
+                                  {answer.questionType === 'multi' && !isJudge && (correctOrderIndex !== null || userOrderIndex !== null) && (
+                                    <div className="ml-2 flex items-center space-x-1">
+                                      {correctOrderIndex !== null && (
+                                        <span className="px-1.5 py-0.5 bg-green-200 text-green-800 text-xs font-bold rounded">
+                                          正确答案第{correctOrderIndex}个
+                                        </span>
+                                      )}
+                                      {userOrderIndex !== null && (
+                                        <span className={`px-1.5 py-0.5 text-xs font-bold rounded ${answer.isCorrect ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
+                                          您的第{userOrderIndex}个选择
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        ) : (
+                          // 如果没有选项，显示简单的答案对比
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <p className="text-gray-600 font-semibold mb-1">您的答案：</p>
+                              <p className={`font-medium ${answer.userAnswer && answer.userAnswer.toString().trim() ? 'text-gray-800' : 'text-gray-400 italic'}`}>
+                                {(() => {
+                                  if (!answer.userAnswer) return '未作答';
+                                  const ua = answer.userAnswer.toString().trim();
+                                  if (!ua) return '未作答';
+                                  
+                                  // 判断题：直接返回原值
+                                  if (isJudge) return ua;
+                                  
+                                  // 尝试转换为字母格式显示
+                                  let indexes: number[] = [];
+                                  if (ua.includes(',')) {
+                                    // 多选题：多个索引，如 "0,1,2"
+                                    indexes = ua.split(',').map((s: string) => Number(s.trim())).filter((n: number) => !isNaN(n));
+                                  } else {
+                                    // 单选题：单个索引，如 "2"
+                                    const num = Number(ua);
+                                    if (!isNaN(num)) {
+                                      indexes = [num];
+                                    }
+                                  }
+                                  
+                                  if (indexes.length > 0) {
+                                    const letters = indexes.map((idx: number) => OPTION_LETTERS[idx] || '').filter(Boolean).join('');
+                                    return letters || ua;
+                                  }
+                                  
+                                  return ua;
+                                })()}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-gray-600 font-semibold mb-1">正确答案：</p>
+                              <p className="font-medium text-gray-800">
+                                {(() => {
+                                  if (!answer.correctAnswer) return '-';
+                                  const ca = answer.correctAnswer.toString().trim();
+                                  if (!ca) return '-';
+                                  
+                                  // 判断题：直接返回原值
+                                  if (isJudge) return ca;
+                                  
+                                  // 尝试转换为字母格式显示
+                                  let indexes: number[] = [];
+                                  if (ca.includes(',')) {
+                                    // 多选题：多个索引，如 "0,1,2"
+                                    indexes = ca.split(',').map((s: string) => Number(s.trim())).filter((n: number) => !isNaN(n));
+                                  } else {
+                                    // 单选题：单个索引，如 "2"
+                                    const num = Number(ca);
+                                    if (!isNaN(num)) {
+                                      indexes = [num];
+                                    }
+                                  }
+                                  
+                                  if (indexes.length > 0) {
+                                    const letters = indexes.map((idx: number) => OPTION_LETTERS[idx] || '').filter(Boolean).join('');
+                                    return letters || ca;
+                                  }
+                                  
+                                  return ca;
+                                })()}
+                              </p>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <p className="font-medium mb-3">{answer.questionContent}</p>
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <p className="text-gray-600">您的答案：</p>
-                          <p className="font-medium">{answer.userAnswer}</p>
-                        </div>
-                        <div>
-                          <p className="text-gray-600">正确答案：</p>
-                          <p className="font-medium">{answer.correctAnswer}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>

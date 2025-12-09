@@ -861,7 +861,7 @@ const ExamResults: React.FC = () => {
                               <span className="ml-2 text-xs text-gray-500">得分：<span className="font-bold text-gray-800">{ans.score}</span></span>
                               <span className={`ml-2 px-2 py-0.5 rounded text-xs ${ans.isCorrect ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{ans.isCorrect ? '✔ 正确' : '✘ 错误'}</span>
                 </div>
-                            {optionsToShow && optionsToShow.length > 0 && expanded === String(idx) && (
+                            {expanded === String(idx) && (optionsToShow && optionsToShow.length > 0 ? (
                               <div className="pl-8 pb-2">
                                 {/* 多选题答案顺序显示 */}
                                 {ans.questionType === 'multi' && !isJudge && (
@@ -907,12 +907,16 @@ const ExamResults: React.FC = () => {
                                         }
                                       }
                                       const userOrder = userIndexes.map(idx => OPTION_LETTERS[idx] || '').filter(Boolean).join('→');
-                                      return userOrder ? (
+                                      return (
                                         <div className="text-sm">
                                           <span className="font-semibold text-gray-700">您的答案顺序：</span>
-                                          <span className={`ml-2 px-2 py-1 font-bold rounded ${ans.isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{userOrder}</span>
+                                          {userOrder ? (
+                                            <span className={`ml-2 px-2 py-1 font-bold rounded ${ans.isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{userOrder}</span>
+                                          ) : (
+                                            <span className="ml-2 px-2 py-1 font-bold rounded bg-gray-100 text-gray-500 italic">未作答</span>
+                                          )}
                                         </div>
-                                      ) : null;
+                                      );
                                     })()}
                                   </div>
                                 )}
@@ -989,44 +993,6 @@ const ExamResults: React.FC = () => {
                                     } else if (isUserSelected) {
                                       highlightClass = 'bg-red-100 text-red-700 font-bold'; // 选错
                                     }
-                                    // 获取选项在选择顺序中的位置（仅多选题）
-                                    let correctOrderIndex: number | null = null;
-                                    let userOrderIndex: number | null = null;
-                                    if (ans.questionType === 'multi' && !isJudge) {
-                                      // 获取正确答案中的顺序（支持索引格式和字母格式）
-                                      let correctIndexes: number[] = [];
-                                      if (Array.isArray(ans.correctAnswer)) {
-                                        correctIndexes = ans.correctAnswer.map((idx: any) => Number(idx));
-                                      } else if (typeof ans.correctAnswer === 'string') {
-                                        const ca = ans.correctAnswer.trim();
-                                        if (ca.includes(',')) {
-                                          // 索引格式：如 "1,3,0,2"
-                                          correctIndexes = ca.split(',').map((s: string) => Number(s.trim()));
-                                        } else if (/^[A-Za-z]+$/.test(ca)) {
-                                          // 字母格式：如 "BDAC"，转换为索引数组
-                                          correctIndexes = ca.toUpperCase().split('').map((char: string) => {
-                                            return char.charCodeAt(0) - 'A'.charCodeAt(0);
-                                          });
-                                        }
-                                      }
-                                      if (correctIndexes.includes(i)) {
-                                        correctOrderIndex = correctIndexes.indexOf(i) + 1;
-                                      }
-                                      
-                                      // 获取用户答案中的顺序
-                                      let userIndexes: number[] = [];
-                                      if (Array.isArray(ans.userAnswer)) {
-                                        userIndexes = ans.userAnswer.map((idx: any) => Number(idx));
-                                      } else if (typeof ans.userAnswer === 'string') {
-                                        const ua = ans.userAnswer.trim();
-                                        if (ua && ua.includes(',')) {
-                                          userIndexes = ua.split(',').map((s: string) => Number(s.trim()));
-                                        }
-                                      }
-                                      if (userIndexes.includes(i)) {
-                                        userOrderIndex = userIndexes.indexOf(i) + 1;
-                                      }
-                                    }
                                     
                                     return (
                                       <li
@@ -1036,27 +1002,111 @@ const ExamResults: React.FC = () => {
                                       >
                                         <span className="inline-block w-5 text-center mr-2 font-bold">{letter}.</span>
                                         <span className="break-all flex-1">{displayOpt}</span>
-                                        {/* 显示顺序信息（仅多选题） */}
-                                        {ans.questionType === 'multi' && !isJudge && (correctOrderIndex !== null || userOrderIndex !== null) && (
-                                          <div className="ml-2 flex items-center space-x-1">
-                                            {correctOrderIndex !== null && (
-                                              <span className="px-1.5 py-0.5 bg-green-200 text-green-800 text-xs font-bold rounded">
-                                                正确答案第{correctOrderIndex}个
-                                              </span>
-                                            )}
-                                            {userOrderIndex !== null && (
-                                              <span className={`px-1.5 py-0.5 text-xs font-bold rounded ${ans.isCorrect ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
-                                                您的第{userOrderIndex}个选择
-                                              </span>
-                                            )}
-                                          </div>
-                                        )}
                                       </li>
                                     );
                                   })}
                                 </ul>
-                </div>
-                            )}
+                                {/* 显示用户答案文本（仅单选题和判断题，多选题已有顺序显示） */}
+                                {ans.questionType !== 'multi' && (
+                                  <div className="mt-3 pt-3 border-t border-gray-200">
+                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                      <div>
+                                        <p className="text-gray-600 font-semibold mb-1">您的答案：</p>
+                                        <p className={`font-medium ${ans.userAnswer && ans.userAnswer.toString().trim() ? 'text-gray-800' : 'text-gray-400 italic'}`}>
+                                          {(() => {
+                                            if (!ans.userAnswer) return '未作答';
+                                            const ua = ans.userAnswer.toString().trim();
+                                            if (!ua) return '未作答';
+                                            
+                                            // 判断题：直接返回原值
+                                            if (isJudge) return ua;
+                                            
+                                            // 单选题：转换为字母格式显示
+                                            const num = Number(ua);
+                                            if (!isNaN(num)) {
+                                              return OPTION_LETTERS[num] || ua;
+                                            }
+                                            
+                                            return ua;
+                                          })()}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-gray-600 font-semibold mb-1">正确答案：</p>
+                                        <p className="font-medium text-gray-800">
+                                          {(() => {
+                                            if (!ans.correctAnswer) return '-';
+                                            const ca = ans.correctAnswer.toString().trim();
+                                            if (!ca) return '-';
+                                            
+                                            // 判断题：直接返回原值
+                                            if (isJudge) return ca;
+                                            
+                                            // 单选题：转换为字母格式显示
+                                            const num = Number(ca);
+                                            if (!isNaN(num)) {
+                                              return OPTION_LETTERS[num] || ca;
+                                            }
+                                            
+                                            return ca;
+                                          })()}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              // 如果选项列表为空，直接显示答案对比（仅单选题和判断题）
+                              ans.questionType !== 'multi' && (
+                                <div className="pl-8 pb-2">
+                                  <div className="grid grid-cols-2 gap-4 text-sm">
+                                    <div>
+                                      <p className="text-gray-600 font-semibold mb-1">您的答案：</p>
+                                      <p className={`font-medium ${ans.userAnswer && ans.userAnswer.toString().trim() ? 'text-gray-800' : 'text-gray-400 italic'}`}>
+                                        {(() => {
+                                          if (!ans.userAnswer) return '未作答';
+                                          const ua = ans.userAnswer.toString().trim();
+                                          if (!ua) return '未作答';
+                                          
+                                          // 判断题：直接返回原值
+                                          if (isJudge) return ua;
+                                          
+                                          // 单选题：转换为字母格式显示
+                                          const num = Number(ua);
+                                          if (!isNaN(num)) {
+                                            return OPTION_LETTERS[num] || ua;
+                                          }
+                                          
+                                          return ua;
+                                        })()}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-gray-600 font-semibold mb-1">正确答案：</p>
+                                      <p className="font-medium text-gray-800">
+                                        {(() => {
+                                          if (!ans.correctAnswer) return '-';
+                                          const ca = ans.correctAnswer.toString().trim();
+                                          if (!ca) return '-';
+                                          
+                                          // 判断题：直接返回原值
+                                          if (isJudge) return ca;
+                                          
+                                          // 单选题：转换为字母格式显示
+                                          const num = Number(ca);
+                                          if (!isNaN(num)) {
+                                            return OPTION_LETTERS[num] || ca;
+                                          }
+                                          
+                                          return ca;
+                                        })()}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            ))}
                 </div>
                         );
                       })

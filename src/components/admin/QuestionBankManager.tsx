@@ -1408,34 +1408,114 @@ const QuestionBankManager: React.FC = () => {
                   {editQuestionForm.type === 'multi' && (
                     <div>
                       <Label>选项设置</Label>
-                      <div className="space-y-2">
-                        {(editQuestionForm.options || ['', '', '', '']).map((option, index) => (
-                          <div key={index} className="flex items-center space-x-2">
-                            <span className="w-8 text-center font-medium">{String.fromCharCode(65 + index)}.</span>
-                            <Input 
-                              value={option}
-                              onChange={e => {
-                                const newOptions = [...(editQuestionForm.options || ['', '', '', ''])];
-                                newOptions[index] = e.target.value;
-                                setEditQuestionForm(f => ({ ...f, options: newOptions }));
-                              }}
-                              placeholder={`选项${String.fromCharCode(65 + index)}`}
-                              className="flex-1"
-                            />
-                            <input
-                              type="checkbox"
-                              checked={Array.isArray(editQuestionForm.correctAnswer) && editQuestionForm.correctAnswer.includes(index)}
-                              onChange={e => {
-                                let arr = Array.isArray(editQuestionForm.correctAnswer) ? [...editQuestionForm.correctAnswer] : [];
-                                if (e.target.checked) arr.push(index);
-                                else arr = arr.filter(i => i !== index);
-                                setEditQuestionForm(f => ({ ...f, correctAnswer: arr }));
-                              }}
-                              className="w-4 h-4"
-                            />
-                            <label className="text-sm text-gray-600">正确</label>
+                      {/* 已选择答案顺序预览 */}
+                      {Array.isArray(editQuestionForm.correctAnswer) && editQuestionForm.correctAnswer.length > 0 && (
+                        <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                          <p className="text-sm font-semibold text-blue-800 mb-2">正确答案顺序：</p>
+                          <div className="flex flex-wrap gap-2">
+                            {editQuestionForm.correctAnswer.map((selectedIndex: number, orderIndex: number) => (
+                              <div key={selectedIndex} className="flex items-center bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1 rounded-full">
+                                <span>{orderIndex + 1}. {String.fromCharCode(65 + selectedIndex)}</span>
+                                <div className="ml-2 flex space-x-1">
+                                  {/* 上移按钮 */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const arr = [...editQuestionForm.correctAnswer];
+                                      if (orderIndex > 0) {
+                                        [arr[orderIndex - 1], arr[orderIndex]] = [arr[orderIndex], arr[orderIndex - 1]];
+                                        setEditQuestionForm(f => ({ ...f, correctAnswer: arr }));
+                                      }
+                                    }}
+                                    disabled={orderIndex === 0}
+                                    className="text-blue-600 hover:text-blue-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    ▲
+                                  </button>
+                                  {/* 下移按钮 */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const arr = [...editQuestionForm.correctAnswer];
+                                      if (orderIndex < arr.length - 1) {
+                                        [arr[orderIndex], arr[orderIndex + 1]] = [arr[orderIndex + 1], arr[orderIndex]];
+                                        setEditQuestionForm(f => ({ ...f, correctAnswer: arr }));
+                                      }
+                                    }}
+                                    disabled={orderIndex === editQuestionForm.correctAnswer.length - 1}
+                                    className="text-blue-600 hover:text-blue-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    ▼
+                                  </button>
+                                  {/* 删除按钮 */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const arr = editQuestionForm.correctAnswer.filter((i: number) => i !== selectedIndex);
+                                      setEditQuestionForm(f => ({ ...f, correctAnswer: arr }));
+                                    }}
+                                    className="text-red-600 hover:text-red-900"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                          {/* 显示顺序文本 */}
+                          <div className="mt-2 text-sm">
+                            <span className="font-semibold text-gray-700">顺序：</span>
+                            <span className="ml-2 px-2 py-1 bg-green-100 text-green-800 font-bold rounded">
+                              {editQuestionForm.correctAnswer.map((idx: number) => String.fromCharCode(65 + idx)).join('→')}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      <div className="space-y-2">
+                        {(editQuestionForm.options || ['', '', '', '']).map((option, index) => {
+                          const isSelected = Array.isArray(editQuestionForm.correctAnswer) && editQuestionForm.correctAnswer.includes(index);
+                          const selectionOrder = isSelected ? editQuestionForm.correctAnswer.indexOf(index) + 1 : null;
+                          return (
+                            <div key={index} className="flex items-center space-x-2">
+                              <span className="w-8 text-center font-medium">{String.fromCharCode(65 + index)}.</span>
+                              <Input 
+                                value={option}
+                                onChange={e => {
+                                  const newOptions = [...(editQuestionForm.options || ['', '', '', ''])];
+                                  newOptions[index] = e.target.value;
+                                  setEditQuestionForm(f => ({ ...f, options: newOptions }));
+                                }}
+                                placeholder={`选项${String.fromCharCode(65 + index)}`}
+                                className="flex-1"
+                              />
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={e => {
+                                  let arr = Array.isArray(editQuestionForm.correctAnswer) ? [...editQuestionForm.correctAnswer] : [];
+                                  if (e.target.checked) {
+                                    // 添加选择：追加到数组末尾，保持选择的顺序
+                                    arr.push(index);
+                                  } else {
+                                    // 取消选择：从数组中移除，并保持其他选项的顺序
+                                    arr = arr.filter(i => i !== index);
+                                  }
+                                  setEditQuestionForm(f => ({ ...f, correctAnswer: arr }));
+                                }}
+                                className="w-4 h-4"
+                              />
+                              <label className="text-sm text-gray-600">正确</label>
+                              {isSelected && selectionOrder && (
+                                <span className="ml-2 px-2 py-1 bg-yellow-600 text-white text-xs font-bold rounded-full">
+                                  第{selectionOrder}个选择
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}

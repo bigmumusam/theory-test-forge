@@ -28,6 +28,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.annotation.Resource;
 import java.util.*;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import static com.medical.exam.entity.table.ExamRecordTableDef.EXAM_RECORD;
 import static com.medical.exam.entity.table.ExamAnswerTableDef.EXAM_ANSWER;
@@ -314,6 +316,21 @@ public class ExamService {
             Map<String, Object> answerMap = new HashMap<>();
             answerMap.put("questionId", answer.getQuestionId());
             answerMap.put("questionContent", question != null ? question.getQuestionContent() : "");
+            answerMap.put("questionType", question != null ? question.getQuestionType() : "");
+            // 解析选项（如果是字符串格式的JSON，需要解析）
+            if (question != null && question.getQuestionOptions() != null) {
+                try {
+                    ObjectMapper objectMapper = new ObjectMapper();
+                    List<String> options = objectMapper.readValue(question.getQuestionOptions(), new TypeReference<List<String>>() {});
+                    answerMap.put("questionOptions", options);
+                } catch (Exception e) {
+                    // 解析失败，使用空列表
+                    log.warn("解析题目选项失败: {}", e.getMessage());
+                    answerMap.put("questionOptions", new ArrayList<>());
+                }
+            } else {
+                answerMap.put("questionOptions", new ArrayList<>());
+            }
             answerMap.put("userAnswer", answer.getUserAnswer());
             answerMap.put("correctAnswer", answer.getCorrectAnswer());
             answerMap.put("isCorrect", answer.getIsCorrect() == 1);
