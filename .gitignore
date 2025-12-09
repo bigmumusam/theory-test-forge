@@ -168,3 +168,4 @@ dist-ssr
 /backend/target/classes/sql/remove_paper_user_categories.sql
 /backend/target/classes/sql/update_user_category_multiselect.sql
 /backend/.classpath
+/backend/target/classes/com/medical/exam/service/ExamService$1.class
