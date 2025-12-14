@@ -212,8 +212,6 @@ const ExamResults: React.FC = () => {
         return <Badge variant="default" className="bg-green-100 text-green-800">已完成</Badge>;
       case 'in-progress':
         return <Badge variant="default" className="bg-blue-100 text-blue-800">进行中</Badge>;
-      case 'timeout':
-        return <Badge variant="destructive">超时</Badge>;
       default:
         return <Badge variant="secondary">未知</Badge>;
     }
@@ -571,7 +569,6 @@ const ExamResults: React.FC = () => {
               <SelectItem value="all">全部状态</SelectItem>
               <SelectItem value="completed">已完成</SelectItem>
               <SelectItem value="in-progress">进行中</SelectItem>
-              <SelectItem value="timeout">超时</SelectItem>
               <SelectItem value="deleted">已删除</SelectItem>
             </SelectContent>
           </Select>

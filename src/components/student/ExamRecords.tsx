@@ -125,8 +125,6 @@ const ExamRecords: React.FC = () => {
         return <Badge variant="default" className="bg-green-100 text-green-800">已完成</Badge>;
       case 'in-progress':
         return <Badge variant="default" className="bg-blue-100 text-blue-800">进行中</Badge>;
-      case 'timeout':
-        return <Badge variant="destructive">超时</Badge>;
       case 'pending':
         return <Badge variant="secondary">待开始</Badge>;
       default:

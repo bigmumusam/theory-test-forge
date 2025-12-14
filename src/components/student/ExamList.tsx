@@ -23,6 +23,8 @@ interface AvailableExam {
   duration: number;
   status: string;
   userCategories?: string[]; // 人员类别（多选）
+  createTime?: string; // 创建时间
+  updateTime?: string; // 更新时间
 }
 
 const ExamList: React.FC<ExamListProps> = ({ user, onStartExam }) => {
@@ -68,7 +70,7 @@ const ExamList: React.FC<ExamListProps> = ({ user, onStartExam }) => {
     fetchAvailableExams();
   }, []);
 
-  // 排序：未考试 > 进行中 > 已完成/超时
+  // 排序：未考试 > 进行中 > 已完成/超时，相同状态下按时间倒序
   const sortedExams = [...availableExams].sort((a, b) => {
     const statusOrder = {
       'pending': 0,      // 未开始考试
@@ -84,8 +86,23 @@ const ExamList: React.FC<ExamListProps> = ({ user, onStartExam }) => {
       return statusDiff;
     }
     
-    // 相同状态下按考试名称排序
-    return a.paperName.localeCompare(b.paperName);
+    // 相同状态下按时间倒序排序（最新的在前）
+    // 优先使用 updateTime，如果没有则使用 createTime
+    const timeA = a.updateTime || a.createTime || '';
+    const timeB = b.updateTime || b.createTime || '';
+    
+    if (timeA && timeB) {
+      // 时间倒序：较新的时间排在前面
+      return new Date(timeB).getTime() - new Date(timeA).getTime();
+    }
+    
+    // 如果都没有时间，则按考试名称排序
+    if (!timeA && !timeB) {
+      return a.paperName.localeCompare(b.paperName);
+    }
+    
+    // 有时间的排在前面
+    return timeA ? -1 : 1;
   });
 
   // 分页计算
@@ -191,10 +208,22 @@ const ExamList: React.FC<ExamListProps> = ({ user, onStartExam }) => {
         return <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">进行中</span>;
       case 'completed':
         return <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">已完成</span>;
-      case 'timeout':
-        return <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">超时</span>;
       default:
         return <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded">可参加</span>;
+    }
+  };
+
+  // 格式化时间显示（只显示日期，不包含时分秒）
+  const formatDateTime = (dateTime?: string): string => {
+    if (!dateTime) return '未知';
+    try {
+      const date = new Date(dateTime);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    } catch (error) {
+      return '未知';
     }
   };
 
@@ -239,6 +268,10 @@ const ExamList: React.FC<ExamListProps> = ({ user, onStartExam }) => {
                 </span>
               </div>
               <div className="flex justify-between">
+                <span className="text-gray-600">创建日期：</span>
+                <span className="font-medium text-gray-700">{formatDateTime(exam.createTime)}</span>
+              </div>
+              <div className="flex justify-between">
                 <span className="text-gray-600">考试时长：</span>
                 <span className="font-medium">{exam.duration}分钟</span>
               </div>
@@ -253,9 +286,9 @@ const ExamList: React.FC<ExamListProps> = ({ user, onStartExam }) => {
             </div>
             
             <div className="mt-6">
-                {exam.status === 'completed' || exam.status === 'timeout' ? (
+                {exam.status === 'completed' ? (
                   <Button disabled className="w-full">
-                    {exam.status === 'completed' ? '已完成' : '已超时'}
+                    已完成
                   </Button>
                 ) : (
                   <Button 

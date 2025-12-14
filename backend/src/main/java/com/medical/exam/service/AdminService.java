@@ -1351,17 +1351,12 @@ public class AdminService {
                 // 已考试的情况
                 if ("in-progress".equals(latestRecord.getStatus())) {
                     paper.setStatus("in-progress"); // 进行中
-                } else if ("completed".equals(latestRecord.getStatus())) {
+                } else if ("completed".equals(latestRecord.getStatus()) || "timeout".equals(latestRecord.getStatus())) {
+                    // timeout 状态视为已完成（因为考试到时间会自动提交）
                     if (hasForceRetake) {
                         paper.setStatus("pending"); // 已完成 + 管理员安排重考 = 可以重考
                     } else {
                         paper.setStatus("completed"); // 已完成 + 无重考安排 = 不能重考
-                    }
-                } else if ("timeout".equals(latestRecord.getStatus())) {
-                    if (hasForceRetake) {
-                        paper.setStatus("pending"); // 超时 + 管理员安排重考 = 可以重考
-                    } else {
-                        paper.setStatus("timeout"); // 超时 + 无重考安排 = 不能重考
                     }
                 } else {
                     if (hasForceRetake) {

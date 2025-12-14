@@ -30,6 +30,7 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
   const fiveMinuteWarnedRef = useRef(false);
+  const handleAutoSubmitRef = useRef<() => void>();
 
   // 解析多选题 correctAnswer 并修正 type 字段
   const parsedQuestions = exam.questions.map(q => {
@@ -116,7 +117,10 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
 
           if (next <= 0) {
             clearInterval(timerRef.current!);
-            handleAutoSubmit();
+            // 使用 ref 中存储的最新函数，避免闭包问题
+            if (handleAutoSubmitRef.current) {
+              handleAutoSubmitRef.current();
+            }
             return 0;
           }
 
@@ -130,7 +134,7 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
         clearInterval(timerRef.current);
       }
     };
-  }, [isExamCompleted]);
+  }, [isExamCompleted, toast]);
 
   const formatTime = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
@@ -309,6 +313,9 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
     // 考试时间到：强制交卷，即使有未完成的题目
     submitExam({ skipAnswerCheck: true });
   };
+
+  // 使用 ref 存储最新的 handleAutoSubmit，避免闭包问题
+  handleAutoSubmitRef.current = handleAutoSubmit;
 
   const handleConfirmSubmit = () => {
     // 清除倒计时

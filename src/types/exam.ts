@@ -16,7 +16,7 @@ export interface ExamPaper {
   questions: Question[];
   totalScore: number;
   duration: number; // minutes
-  status: 'pending' | 'in-progress' | 'completed' | 'timeout';
+  status: 'pending' | 'in-progress' | 'completed';
   startTime?: Date;
   endTime?: Date;
   submittedAnswers?: Record<string, any>;
