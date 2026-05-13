@@ -9,6 +9,8 @@ public class UserQueryDTO {
     private String role;
     private String department;
     private String keyword;
+    /** 人员类别（与 sys_user.user_category 一致） */
+    private String userCategory;
     private String status;
     @NotNull(message = "页码不能为空")
     @Min(value = 1, message = "页码最小为1")

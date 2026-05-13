@@ -18,6 +18,7 @@ import com.mybatisflex.core.query.QueryWrapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.*;
@@ -126,6 +127,9 @@ public class AuthService {
                 .and(SYS_USER.ROLE.eq(userQueryDTO.getRole()))
                 .and(SYS_USER.STATUS.eq(userQueryDTO.getStatus()))
                 .and(SYS_USER.DEPARTMENT.eq(userQueryDTO.getDepartment()));
+        if (StringUtils.hasText(userQueryDTO.getUserCategory())) {
+            queryWrapper.and(SYS_USER.USER_CATEGORY.eq(userQueryDTO.getUserCategory()));
+        }
 
         return  userMapper.paginate(userQueryDTO.getPageNumber(), userQueryDTO.getPageSize(), queryWrapper);
     }

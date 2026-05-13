@@ -192,11 +192,6 @@ const UserManager = () => {
     setCurrentPage(1);
   };
 
-  // 搜索时重置页码
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchKeyword]);
-
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -311,12 +306,21 @@ const UserManager = () => {
               <Input
                 placeholder="搜索姓名或身份证号..."
                 value={searchKeyword}
-                onChange={(e) => setSearchKeyword(e.target.value)}
+                onChange={(e) => {
+                  setSearchKeyword(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="pl-10"
               />
             </div>
           </div>
-          <Select value={selectedUserCategory} onValueChange={setSelectedUserCategory}>
+          <Select
+            value={selectedUserCategory}
+            onValueChange={(v) => {
+              setSelectedUserCategory(v);
+              setCurrentPage(1);
+            }}
+          >
             <SelectTrigger className="w-40">
               <SelectValue placeholder="人员类别筛选" />
             </SelectTrigger>
@@ -329,7 +333,13 @@ const UserManager = () => {
               <SelectItem value="聘用制">聘用制</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={selectedRole} onValueChange={setSelectedRole}>
+          <Select
+            value={selectedRole}
+            onValueChange={(v) => {
+              setSelectedRole(v);
+              setCurrentPage(1);
+            }}
+          >
             <SelectTrigger className="w-40">
               <SelectValue placeholder="角色筛选" />
             </SelectTrigger>
@@ -340,7 +350,13 @@ const UserManager = () => {
               <SelectItem value="student">考生</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
+          <Select
+            value={selectedDepartment}
+            onValueChange={(v) => {
+              setSelectedDepartment(v);
+              setCurrentPage(1);
+            }}
+          >
             <SelectTrigger className="w-40">
               <SelectValue placeholder="部门筛选" />
             </SelectTrigger>
@@ -351,7 +367,13 @@ const UserManager = () => {
               ))}
             </SelectContent>
           </Select>
-          <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+          <Select
+            value={selectedStatus}
+            onValueChange={(v) => {
+              setSelectedStatus(v);
+              setCurrentPage(1);
+            }}
+          >
             <SelectTrigger className="w-32">
               <SelectValue placeholder="状态筛选" />
             </SelectTrigger>
@@ -361,7 +383,7 @@ const UserManager = () => {
               <SelectItem value="0">停用</SelectItem>
             </SelectContent>
           </Select>
-          {(searchKeyword || selectedRole !== 'all' || selectedDepartment !== 'all' || selectedUserCategory !== 'all') && (
+          {(searchKeyword || selectedRole !== 'all' || selectedDepartment !== 'all' || selectedUserCategory !== 'all' || selectedStatus !== 'all') && (
             <Button variant="outline" onClick={clearFilters}>
               清除筛选
             </Button>
@@ -456,7 +478,9 @@ const UserManager = () => {
       </Card>
       <div className="mt-6 flex flex-col md:flex-row md:justify-between md:items-center gap-2">
         <p className="text-sm text-gray-600 whitespace-nowrap mb-2 md:mb-0">
-          显示 {(currentPage - 1) * pageSize + 1} 到 {Math.min(currentPage * pageSize, totalRows)} 条，共 {totalRows} 条记录
+          {totalRows === 0
+            ? '显示 0 到 0 条，共 0 条记录'
+            : `显示 ${(currentPage - 1) * pageSize + 1} 到 ${Math.min(currentPage * pageSize, totalRows)} 条，共 ${totalRows} 条记录`}
         </p>
         <SmartPagination
           currentPage={currentPage}
