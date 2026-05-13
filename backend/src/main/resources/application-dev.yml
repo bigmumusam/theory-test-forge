@@ -6,4 +6,4 @@ mybatis-flex:
       password: exam2025
       type: com.alibaba.druid.pool.DruidDataSource
   configuration:
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+#    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
