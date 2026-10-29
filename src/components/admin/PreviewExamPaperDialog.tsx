@@ -62,7 +62,7 @@ const PreviewExamPaperDialog: React.FC<PreviewExamPaperDialogProps> = ({ open, o
               <div className="flex">
                 <span className="text-gray-600 whitespace-nowrap">人员类别：</span>
                 <span className="text-blue-600 font-medium ml-2 break-words">
-                  {paper.userCategories || '指挥管理军官'}
+                  {paper.userCategories || '-'}
                 </span>
               </div>
               <div className="flex justify-between">

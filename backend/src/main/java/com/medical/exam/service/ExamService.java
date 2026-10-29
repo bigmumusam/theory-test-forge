@@ -34,8 +34,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import static com.medical.exam.entity.table.ExamRecordTableDef.EXAM_RECORD;
 import static com.medical.exam.entity.table.ExamAnswerTableDef.EXAM_ANSWER;
 import static com.medical.exam.entity.table.ExamQuestionTableDef.EXAM_QUESTION;
-import static com.medical.exam.entity.table.ExamConfigTableDef.EXAM_CONFIG;
-import static com.medical.exam.entity.table.ExamPaperTableDef.EXAM_PAPER;
 import static com.medical.exam.entity.table.ExamForceRetakeTableDef.EXAM_FORCE_RETAKE;
 import static com.medical.exam.entity.table.SysUserTableDef.SYS_USER;
 
@@ -67,7 +65,7 @@ public class ExamService {
     private SysUserMapper sysUserMapper;
 
     @Transactional(rollbackFor = Exception.class)
-    public String startExam(StartExamDTO startExamDTO) {
+    public Map<String, Object> startExam(StartExamDTO startExamDTO) {
         CustomToken customToken = JwtAccessContext.getLoginInfo();
         
         // 查询当前用户是否有该试卷的未完成考试记录
@@ -78,12 +76,7 @@ public class ExamService {
         );
         
         // 获取考试配置信息，用于设置总分
-        ExamConfig examConfig = examConfigMapper.selectOneByQuery(
-            QueryWrapper.create()
-                .from(EXAM_CONFIG)
-                .leftJoin(EXAM_PAPER).on(EXAM_CONFIG.CONFIG_ID.eq(EXAM_PAPER.CONFIG_ID))
-                .where(EXAM_PAPER.PAPER_ID.eq(startExamDTO.getPaperId()))
-        );
+        ExamConfig examConfig = examConfigMapper.selectByPaperId(startExamDTO.getPaperId());
         
         if (examConfig == null) {
             throw new RuntimeException("考试配置不存在");
@@ -111,7 +104,10 @@ public class ExamService {
             throw new RuntimeException("您的人员类别不在该考试的允许范围内，无法参加此考试");
         }
         
+        Map<String, Object> startResult = new HashMap<>();
         String recordId = "";
+        // -1 表示新考试，前端使用完整时长
+        long remainingSeconds = -1L;
         if(examRecords.isEmpty()){
             // 检查是否是强制重考
             ExamForceRetake forceRetake = examForceRetakeMapper.selectOneByQuery(
@@ -120,6 +116,17 @@ public class ExamService {
                     .and(EXAM_FORCE_RETAKE.PAPER_ID.eq(startExamDTO.getPaperId()))
                     .and(EXAM_FORCE_RETAKE.FORCE_RETAKE.eq(1))
             );
+
+            // 已完成（含超时）且未被安排重考的，不允许再次开考
+            if (forceRetake == null) {
+                long finishedCount = examRecordMapper.selectCountByQuery(QueryWrapper.create()
+                        .where(EXAM_RECORD.USER_ID.eq(customToken.getUserId()))
+                        .and(EXAM_RECORD.PAPER_ID.eq(startExamDTO.getPaperId()))
+                        .and(EXAM_RECORD.STATUS.in("completed", "timeout")));
+                if (finishedCount > 0) {
+                    throw new RuntimeException("您已完成该考试，如需重考请联系管理员安排");
+                }
+            }
             
             // 创建新的考试记录
             ExamRecord record = ExamRecord.builder()
@@ -135,11 +142,14 @@ public class ExamService {
             examRecordMapper.insert(record);
             recordId = record.getRecordId();
         }else{
-            // 找到已有的考试记录，更新开始时间（页面刷新场景）
+            // 继续未完成的考试（页面刷新场景）：保留原开始时间，刷新不重置倒计时
+            // 已超时的返回剩余 0 秒，前端会立即用本地保存的作答自动交卷
             ExamRecord record = examRecords.getFirst();
-            record.setStartTime(new Date());
-            examRecordMapper.update(record);
             recordId = record.getRecordId();
+            if (record.getStartTime() != null && examConfig.getDuration() != null) {
+                long elapsed = (System.currentTimeMillis() - record.getStartTime().getTime()) / 1000L;
+                remainingSeconds = Math.max(0L, examConfig.getDuration() * 60L - elapsed);
+            }
         }
 
         sysLogMapper.insert(SysLog.builder()
@@ -147,7 +157,10 @@ public class ExamService {
                         .userName(customToken.getUserName())
                         .content("开始考试")
                 .build());
-        return recordId;
+
+        startResult.put("recordId", recordId);
+        startResult.put("remainingSeconds", remainingSeconds);
+        return startResult;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -183,17 +196,12 @@ public class ExamService {
         }
         
         // 4. 获取考试配置信息，用于计算分值
-        ExamConfig examConfig = examConfigMapper.selectOneByQuery(
-            QueryWrapper.create()
-                .from(EXAM_CONFIG)
-                .leftJoin(EXAM_PAPER).on(EXAM_CONFIG.CONFIG_ID.eq(EXAM_PAPER.CONFIG_ID))
-                .where(EXAM_PAPER.PAPER_ID.eq(record.getPaperId()))
-        );
+        ExamConfig examConfig = examConfigMapper.selectByPaperId(record.getPaperId());
         
         if (examConfig == null) {
             throw new RuntimeException("考试配置不存在");
         }
-        
+
         // 5. 计算每题得分并保存答题详情
         int totalScore = 0;
         int correctCount = 0;
@@ -245,17 +253,7 @@ public class ExamService {
         examRecordMapper.update(record);
 
         // 6. 如果是强制重考，完成后自动复位force_retake标识
-        ExamForceRetake forceRetake = examForceRetakeMapper.selectOneByQuery(
-            QueryWrapper.create()
-                .where(EXAM_FORCE_RETAKE.USER_ID.eq(record.getUserId()))
-                .and(EXAM_FORCE_RETAKE.PAPER_ID.eq(record.getPaperId()))
-                .and(EXAM_FORCE_RETAKE.FORCE_RETAKE.eq(1))
-        );
-        if (forceRetake != null) {
-            forceRetake.setForceRetake(0); // 复位强制重考标识
-            examForceRetakeMapper.update(forceRetake);
-            log.info("强制重考完成，已复位用户 {} 试卷 {} 的force_retake标识", record.getUserId(), record.getPaperId());
-        }
+        resetForceRetake(record);
 
         log.info("考试提交成功，记录ID: {}, 得分: {}, 正确题数: {}", request.getRecordId(), totalScore, correctCount);
         sysLogMapper.insert(SysLog.builder()
@@ -271,6 +269,20 @@ public class ExamService {
         result.put("correctCount", correctCount);
         result.put("totalQuestions", request.getAnswers().size());
         return result;
+    }
+
+    private void resetForceRetake(ExamRecord record) {
+        ExamForceRetake forceRetake = examForceRetakeMapper.selectOneByQuery(
+            QueryWrapper.create()
+                .where(EXAM_FORCE_RETAKE.USER_ID.eq(record.getUserId()))
+                .and(EXAM_FORCE_RETAKE.PAPER_ID.eq(record.getPaperId()))
+                .and(EXAM_FORCE_RETAKE.FORCE_RETAKE.eq(1))
+        );
+        if (forceRetake != null) {
+            forceRetake.setForceRetake(0);
+            examForceRetakeMapper.update(forceRetake);
+            log.info("强制重考完成，已复位用户 {} 试卷 {} 的force_retake标识", record.getUserId(), record.getPaperId());
+        }
     }
 
 

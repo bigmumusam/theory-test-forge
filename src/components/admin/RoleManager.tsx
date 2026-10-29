@@ -32,13 +32,15 @@ const RoleManager = () => {
   const [pageSize] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
   const [totalRows, setTotalRows] = useState(0);
+  // 已提交的查询条件（点击"查询"按钮后才更新）
+  const [appliedFilters, setAppliedFilters] = useState({ keyword: '', status: 'all' });
 
   // 查询角色列表
   const fetchRoles = async () => {
     try {
       const params = {
-        keyword: searchKeyword,
-        status: selectedStatus === 'all' ? undefined : selectedStatus,
+        keyword: appliedFilters.keyword,
+        status: appliedFilters.status === 'all' ? undefined : appliedFilters.status,
         pageNumber: currentPage,
         pageSize
       };
@@ -57,7 +59,20 @@ const RoleManager = () => {
   React.useEffect(() => {
     fetchRoles();
     // eslint-disable-next-line
-  }, [currentPage, selectedStatus, searchKeyword]);
+  }, [currentPage, appliedFilters]);
+
+  // 点击"查询"：提交筛选条件并回到第一页
+  const handleSearch = () => {
+    setCurrentPage(1);
+    setAppliedFilters({ keyword: searchKeyword, status: selectedStatus });
+  };
+
+  const clearFilters = () => {
+    setSearchKeyword('');
+    setSelectedStatus('all');
+    setCurrentPage(1);
+    setAppliedFilters({ keyword: '', status: 'all' });
+  };
 
   const handleAddRole = () => {
     setEditingRole(null);
@@ -133,12 +148,6 @@ const RoleManager = () => {
     } catch (error) {
       toast({ title: '删除失败', description: String(error), variant: 'destructive' });
     }
-  };
-
-  const clearFilters = () => {
-    setSearchKeyword('');
-    setSelectedStatus('all');
-    setCurrentPage(1);
   };
 
   return (
@@ -229,6 +238,7 @@ const RoleManager = () => {
                 placeholder="搜索角色名称或标识..."
                 value={searchKeyword}
                 onChange={(e) => setSearchKeyword(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
                 className="pl-10"
               />
             </div>
@@ -244,6 +254,11 @@ const RoleManager = () => {
               <SelectItem value="0">停用</SelectItem>
             </SelectContent>
           </Select>
+
+          <Button onClick={handleSearch}>
+            <Search className="w-4 h-4 mr-1" />
+            查询
+          </Button>
 
           {(searchKeyword || selectedStatus !== 'all') && (
             <Button variant="outline" onClick={clearFilters}>

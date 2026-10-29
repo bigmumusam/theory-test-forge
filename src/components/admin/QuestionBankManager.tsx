@@ -18,13 +18,13 @@ import {
   AlertDialogTitle 
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Upload } from 'lucide-react';
+import { Upload, Download } from 'lucide-react';
 import { Question, Category } from '../../types/exam';
 import ImportDialog from './ImportDialog';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { request } from '@/lib/request';
 import { useOptions } from '../../context/OptionsContext';
-import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationEllipsis } from '@/components/ui/pagination';
+import SmartPagination from '@/components/ui/smart-pagination';
 
 // 层级颜色配置
 const levelColors = [
@@ -38,10 +38,11 @@ const levelColors = [
 // 分类列表项组件
 const CategoryCard: React.FC<{ 
   category: any; 
-  onViewQuestions: () => void; 
-  onEdit: () => void;
+  onViewQuestions: (category: any) => void; 
+  onEdit: (category: any) => void;
+  onDelete: (category: any) => void;
   level?: number;
-}> = ({ category, onViewQuestions, onEdit, level = 0 }) => {
+}> = ({ category, onViewQuestions, onEdit, onDelete, level = 0 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const indent = level * 24; // 每级缩进24px
   const levelColor = levelColors[level] || levelColors[levelColors.length - 1];
@@ -87,13 +88,16 @@ const CategoryCard: React.FC<{
             <Button 
               size="sm" 
               variant="outline" 
-              onClick={onViewQuestions}
+              onClick={() => onViewQuestions(category)}
             >
               查看题目
             </Button>
           )}
-          <Button size="sm" variant="outline" onClick={onEdit}>
+          <Button size="sm" variant="outline" onClick={() => onEdit(category)}>
             编辑
+          </Button>
+          <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => onDelete(category)}>
+            删除
           </Button>
         </div>
       </div>
@@ -106,6 +110,7 @@ const CategoryCard: React.FC<{
               category={child} 
               onViewQuestions={onViewQuestions}
               onEdit={onEdit}
+              onDelete={onDelete}
               level={level + 1}
             />
           ))}
@@ -146,6 +151,20 @@ const getAllCategoryOptions = (categories: any[], level = 0): { value: string; l
   });
   
   return options;
+};
+
+const countCategories = (categories: any[]): number =>
+  categories.reduce((sum, category) => sum + 1 + countCategories(category.children || []), 0);
+
+// 移除指定分类及其子孙（编辑时父级不能选自己或自己的子分类）
+const excludeCategorySubtree = (categories: any[], excludeId?: string): any[] => {
+  if (!excludeId) return categories;
+  return categories
+    .filter(category => category.categoryId !== excludeId)
+    .map(category => ({
+      ...category,
+      children: category.children ? excludeCategorySubtree(category.children, excludeId) : []
+    }));
 };
 
 // 递归排序函数
@@ -257,7 +276,7 @@ const QuestionBankManager: React.FC = () => {
     },
   ]);
 
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [, setSelectedCategory] = useState<string>('all');
   const [newQuestion, setNewQuestion] = useState<Partial<Question>>({
     type: 'choice',
     content: '',
@@ -285,13 +304,18 @@ const QuestionBankManager: React.FC = () => {
   const [tabValue, setTabValue] = useState<'categories' | 'questions'>('categories');
 
   const [searchKeyword, setSearchKeyword] = useState('');
-  const [page, setPage] = useState(1);
-  const pageSize = 10;
 
   const [filterType, setFilterType] = useState<'all' | 'choice' | 'multi' | 'judgment'>('all');
   const [filterDifficulty, setFilterDifficulty] = useState<'all' | 'easy' | 'medium' | 'hard'>('all');
   const [filterScoreMin, setFilterScoreMin] = useState('');
   const [filterScoreMax, setFilterScoreMax] = useState('');
+  const [filterCategory, setFilterCategory] = useState<string>('all');
+  // 停用题目默认不显示
+  const [filterStatus, setFilterStatus] = useState<'1' | '0' | 'all'>('1');
+  // 已提交的查询条件（点击"查询"按钮后才更新，服务端分页筛选）
+  const [appliedFilters, setAppliedFilters] = useState<{
+    categoryId: string; type: string; difficulty: string; scoreMin: string; scoreMax: string; keyword: string; status: string;
+  }>({ categoryId: 'all', type: 'all', difficulty: 'all', scoreMin: '', scoreMax: '', keyword: '', status: '1' });
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
   const [editQuestionForm, setEditQuestionForm] = useState<Partial<Question>>({});
 
@@ -300,11 +324,11 @@ const QuestionBankManager: React.FC = () => {
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
   const [addCategoryForm, setAddCategoryForm] = useState({ name: '', description: '', parentId: '', level: 1, sortOrder: 0 });
   
+  // 分类删除确认
+  const [categoryToDelete, setCategoryToDelete] = useState<any | null>(null);
+  const [categoryDeleteDialogOpen, setCategoryDeleteDialogOpen] = useState(false);
 
-  const categoryPageSize = 9;
-  const [categoryPage, setCategoryPage] = useState(1);
-  const [totalCategoryPages, setTotalCategoryPages] = useState(1);
-  const [totalCategoryRows, setTotalCategoryRows] = useState(0);
+
   const [loadingCategories, setLoadingCategories] = useState(false);
 
   const [questionPage, setQuestionPage] = useState(1);
@@ -349,16 +373,8 @@ const QuestionBankManager: React.FC = () => {
     { open: false, type: 'single' }
   );
 
-  const filteredQuestions = questions.filter(q =>
-    (selectedCategory === 'all' || q.category === selectedCategory) &&
-    (!searchKeyword || q.content.includes(searchKeyword)) &&
-    (filterType === 'all' || q.type === filterType) &&
-    (filterDifficulty === 'all' || q.difficulty === filterDifficulty) &&
-    (!filterScoreMin || q.score >= Number(filterScoreMin)) &&
-    (!filterScoreMax || q.score <= Number(filterScoreMax))
-  );
-  const totalPages = Math.ceil(filteredQuestions.length / pageSize);
-  const pagedQuestions = filteredQuestions.slice((page - 1) * pageSize, page * pageSize);
+  // 服务端分页：直接使用 fetchQuestions 返回的数据（筛选条件已提交到服务端）
+  const pagedQuestions = questions;
 
   const allCurrentPageIds = pagedQuestions.map(q => q.id);
   const isAllCurrentPageSelected = allCurrentPageIds.every(id => selectedQuestions.includes(id));
@@ -378,8 +394,7 @@ const QuestionBankManager: React.FC = () => {
   };
   const handleBatchDelete = () => {
     if (selectedQuestions.length === 0) return;
-    setDeleteType('batch');
-    setDeleteDialogOpen(true);
+    setDeleteDialog({ open: true, type: 'batch' });
   };
 
   const handleAddCategory = () => {
@@ -387,24 +402,32 @@ const QuestionBankManager: React.FC = () => {
     setIsAddCategoryOpen(true);
   };
 
-  const fetchCategories = async (page = 1) => {
+  const fetchCategories = async () => {
     setLoadingCategories(true);
     try {
-      // 获取树形分类结构
+      // 获取完整的树形分类结构（一次全部展示，不分页）
       const res = await request('/admin/categories/tree', {
         method: 'POST'
       });
-      const categories = res.data || [];
-      setCategories(categories);
-      setTotalCategoryPages(1);
-      setTotalCategoryRows(categories.length);
+      setCategories(res.data || []);
     } finally {
       setLoadingCategories(false);
     }
   };
 
+  // 分类变更后刷新全局 options 缓存，否则题目列表的分类下拉和分类名称仍是旧数据
+  const refreshOptions = async () => {
+    try {
+      const optionsRes = await request('/admin/options', { method: 'POST' });
+      setOptions(optionsRes.data);
+      localStorage.setItem('options', JSON.stringify(optionsRes.data));
+    } catch (e) {
+      console.error('刷新options失败:', e);
+    }
+  };
+
   useEffect(() => {
-    fetchCategories(1);
+    fetchCategories();
   }, []);
 
   const handleSaveAddCategory = async () => {
@@ -434,12 +457,8 @@ const QuestionBankManager: React.FC = () => {
     });
     setIsAddCategoryOpen(false);
     toast({ title: '题目分类添加成功', description: `已添加题目分类：${addCategoryForm.name}` });
-    fetchCategories(categoryPage);
-  };
-
-  const handleCategoryPageChange = (page: number) => {
-    setCategoryPage(page);
-    fetchCategories(page);
+    fetchCategories();
+    refreshOptions();
   };
 
   const handleSaveEditCategory = async () => {
@@ -459,7 +478,7 @@ const QuestionBankManager: React.FC = () => {
     }
     
     try {
-      await request('/admin/categories/update', {
+      const res = await request('/admin/categories/update', {
         method: 'POST',
         body: JSON.stringify({
           categoryId: editingCategory.categoryId,
@@ -470,11 +489,80 @@ const QuestionBankManager: React.FC = () => {
           sortOrder: editCategoryForm.sortOrder,
         }),
       });
+      if (res.code !== 200) {
+        toast({ title: '更新失败', description: res.message || '更新失败', variant: 'destructive' });
+        return;
+      }
       setEditingCategory(null);
       toast({ title: '题目分类更新成功', description: `已更新题目分类：${editCategoryForm.name}` });
-      fetchCategories(categoryPage);
+      fetchCategories();
+      refreshOptions();
     } catch (e) {
       toast({ title: '更新失败', description: String(e), variant: 'destructive' });
+    }
+  };
+
+  // 确认删除分类（后端校验：有子分类或题目时拒绝删除）
+  const confirmDeleteCategory = async () => {
+    if (!categoryToDelete) return;
+    try {
+      const res = await request('/admin/categories/delete', {
+        method: 'POST',
+        body: JSON.stringify({ categoryId: categoryToDelete.categoryId })
+      });
+      if (res.code !== 200) {
+        throw new Error(res.message || '删除失败');
+      }
+      toast({ title: '题目分类删除成功', description: `已删除题目分类：${categoryToDelete.categoryName}` });
+      setCategoryDeleteDialogOpen(false);
+      setCategoryToDelete(null);
+      fetchCategories();
+      refreshOptions();
+    } catch (e: any) {
+      toast({ title: '删除失败', description: e?.message || String(e), variant: 'destructive' });
+      setCategoryDeleteDialogOpen(false);
+    }
+  };
+
+  // 导出全部题目（按导入新格式，后端生成xlsx）
+  const handleExportQuestions = async () => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE}/admin/questions/export`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!response.ok) {
+        throw new Error('导出失败');
+      }
+      if (response.headers.get('Content-Type')?.includes('application/json')) {
+        const errorBody = await response.json();
+        throw new Error(errorBody.message || '导出失败');
+      }
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = 'questions.xlsx';
+      if (contentDisposition) {
+        let filenameMatch = contentDisposition.match(/filename\*=UTF-8''(.+)/);
+        if (filenameMatch) {
+          filename = decodeURIComponent(filenameMatch[1]);
+        } else {
+          filenameMatch = contentDisposition.match(/filename=(.+)/);
+          if (filenameMatch) filename = filenameMatch[1];
+        }
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast({ title: '导出成功', description: '题库已按导入格式导出' });
+    } catch (error: any) {
+      toast({ title: '导出失败', description: error?.message || '导出题目时发生错误，请重试', variant: 'destructive' });
     }
   };
 
@@ -649,12 +737,13 @@ const QuestionBankManager: React.FC = () => {
       const params = {
         pageNumber: page,
         pageSize: questionPageSize,
-        categoryId: selectedCategory !== 'all' ? selectedCategory : undefined,
-        questionType: filterType !== 'all' ? filterType : undefined,
-        difficulty: filterDifficulty !== 'all' ? filterDifficulty : undefined,
-        scoreMin: filterScoreMin || undefined,
-        scoreMax: filterScoreMax || undefined,
-        keyword: searchKeyword || undefined
+        categoryId: appliedFilters.categoryId !== 'all' ? appliedFilters.categoryId : undefined,
+        questionType: appliedFilters.type !== 'all' ? appliedFilters.type : undefined,
+        difficulty: appliedFilters.difficulty !== 'all' ? appliedFilters.difficulty : undefined,
+        scoreMin: appliedFilters.scoreMin || undefined,
+        scoreMax: appliedFilters.scoreMax || undefined,
+        keyword: appliedFilters.keyword || undefined,
+        status: appliedFilters.status
       };
       const res = await request('/admin/questions/list', {
         method: 'POST',
@@ -674,7 +763,8 @@ const QuestionBankManager: React.FC = () => {
         category: q.categoryId,
         score: q.score,
         difficulty: q.difficulty,
-        remark: q.remark
+        remark: q.remark,
+        status: q.status
         };
       }));
       setTotalQuestionPages(data.totalPage || 1);
@@ -687,7 +777,48 @@ const QuestionBankManager: React.FC = () => {
 
   useEffect(() => {
     fetchQuestions(1);
-  }, [selectedCategory, filterType, filterDifficulty, filterScoreMin, filterScoreMax, searchKeyword]);
+    // eslint-disable-next-line
+  }, [appliedFilters]);
+
+  // 点击"查询"：提交筛选条件（服务端分页查询）
+  const handleQuestionSearch = () => {
+    setQuestionPage(1);
+    setAppliedFilters({
+      categoryId: filterCategory,
+      type: filterType,
+      difficulty: filterDifficulty,
+      scoreMin: filterScoreMin,
+      scoreMax: filterScoreMax,
+      keyword: searchKeyword,
+      status: filterStatus
+    });
+  };
+
+  const handleQuestionClearFilters = () => {
+    setFilterCategory('all');
+    setFilterType('all');
+    setFilterDifficulty('all');
+    setFilterScoreMin('');
+    setFilterScoreMax('');
+    setSearchKeyword('');
+    setFilterStatus('1');
+    setQuestionPage(1);
+    setAppliedFilters({ categoryId: 'all', type: 'all', difficulty: 'all', scoreMin: '', scoreMax: '', keyword: '', status: '1' });
+  };
+
+  const handleToggleQuestionStatus = async (question: Question) => {
+    const newStatus = question.status === '0' ? '1' : '0';
+    const res = await request('/admin/questions/update', {
+      method: 'POST',
+      body: JSON.stringify({ questionId: question.id, status: newStatus })
+    });
+    if (res.code !== 200) {
+      toast({ title: '操作失败', description: res.message || '操作失败', variant: 'destructive' });
+      return;
+    }
+    toast({ title: newStatus === '1' ? '题目已启用' : '题目已停用' });
+    fetchQuestions(questionPage);
+  };
 
   const handleQuestionPageChange = (page: number) => {
     fetchQuestions(page);
@@ -762,9 +893,9 @@ const QuestionBankManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-800">题库管理</h2>
-        <div className="flex space-x-3">
+      <div className="flex flex-wrap justify-between items-center gap-3">
+        <h2 className="text-2xl font-bold text-gray-800 whitespace-nowrap">题库管理</h2>
+        <div className="flex flex-wrap gap-3">
           <Button onClick={handleAddCategory} variant="outline">
             添加题目分类
           </Button>
@@ -775,6 +906,10 @@ const QuestionBankManager: React.FC = () => {
           <Button variant="outline" onClick={() => setIsNewImportOpen(true)}>
             <Upload className="w-4 h-4 mr-2" />
             导入题目（新格式）
+          </Button>
+          <Button variant="outline" onClick={handleExportQuestions}>
+            <Download className="w-4 h-4 mr-2" />
+            导出题目
           </Button>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
@@ -957,120 +1092,47 @@ const QuestionBankManager: React.FC = () => {
               <CategoryCard 
                 key={category.categoryId} 
                 category={category} 
-                onViewQuestions={() => {
-                  setSelectedCategory(category.categoryId);
+                onViewQuestions={(cat) => {
+                  setFilterCategory(cat.categoryId);
                   setTabValue('questions');
+                  setQuestionPage(1);
+                  setAppliedFilters(prev => ({ ...prev, categoryId: cat.categoryId }));
                   setTimeout(() => {
                     const questionList = document.getElementById('question-list-section');
                     if (questionList) questionList.scrollIntoView({ behavior: 'smooth', block: 'start' });
                   }, 200);
                 }}
-                onEdit={() => {
-                  setEditingCategory(category);
+                onEdit={(cat) => {
+                  setEditingCategory(cat);
                   setEditCategoryForm({ 
-                    name: category.categoryName, 
-                    description: category.remark,
-                    parentId: category.parentId || 'none',
-                    level: category.level || 1,
-                    sortOrder: category.sortOrder || 0
+                    name: cat.categoryName, 
+                    description: cat.remark,
+                    parentId: cat.parentId || 'none',
+                    level: cat.level || 1,
+                    sortOrder: cat.sortOrder || 0
                   });
+                }}
+                onDelete={(cat) => {
+                  setCategoryToDelete(cat);
+                  setCategoryDeleteDialogOpen(true);
                 }}
               />
             ))}
           </div>
-          {/* 题目分类分页 */}
-          {tabValue === 'categories' && (
-            <div className="mt-6 flex flex-col md:flex-row md:justify-between md:items-center gap-2">
-              <p className="text-sm text-gray-600 whitespace-nowrap mb-2 md:mb-0">
-                显示 {(categoryPage - 1) * categoryPageSize + 1} 到 {Math.min(categoryPage * categoryPageSize, totalCategoryRows)} 条，共 {totalCategoryRows} 条记录
-              </p>
-              <div className="w-full md:w-auto min-w-0">
-                <Pagination className="max-w-full">
-                  <PaginationContent className="flex-wrap justify-center gap-1">
-                    <PaginationItem>
-                      <button
-                        onClick={() => handleCategoryPageChange(Math.max(1, categoryPage - 1))}
-                        className={"text-sm px-3 py-1 rounded border mr-1 " + (categoryPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer')}
-                        disabled={categoryPage === 1}
-                      >上一页</button>
-                    </PaginationItem>
-                    {/* 显示页码 - 智能分页，最多显示7个页码，使用省略号 */}
-                    {(() => {
-                      const maxVisiblePages = 7;
-                      const pages: (number | 'ellipsis')[] = [];
-                      
-                      if (totalCategoryPages <= maxVisiblePages) {
-                        // 如果总页数少于等于7，显示所有页码
-                        for (let i = 1; i <= totalCategoryPages; i++) {
-                          pages.push(i);
-                        }
-                      } else {
-                        // 始终显示第一页
-                        pages.push(1);
-                        
-                        if (categoryPage <= 4) {
-                          // 当前页在前4页，显示 1 2 3 4 5 ... 最后一页
-                          for (let i = 2; i <= 5; i++) {
-                            pages.push(i);
-                          }
-                          pages.push('ellipsis');
-                          pages.push(totalCategoryPages);
-                        } else if (categoryPage >= totalCategoryPages - 3) {
-                          // 当前页在后4页，显示 1 ... 倒数4页 最后一页
-                          pages.push('ellipsis');
-                          for (let i = totalCategoryPages - 4; i <= totalCategoryPages; i++) {
-                            pages.push(i);
-                          }
-                        } else {
-                          // 当前页在中间，显示 1 ... 当前页前后各2页 ... 最后一页
-                          pages.push('ellipsis');
-                          for (let i = categoryPage - 2; i <= categoryPage + 2; i++) {
-                            pages.push(i);
-                          }
-                          pages.push('ellipsis');
-                          pages.push(totalCategoryPages);
-                        }
-                      }
-                      
-                      return pages.map((page, index) => {
-                        if (page === 'ellipsis') {
-                          return (
-                            <PaginationItem key={`ellipsis-${index}`}>
-                              <PaginationEllipsis />
-                            </PaginationItem>
-                          );
-                        }
-                        return (
-                          <PaginationItem key={page}>
-                            <PaginationLink
-                              onClick={() => handleCategoryPageChange(page)}
-                              isActive={categoryPage === page}
-                              className="text-sm cursor-pointer"
-                            >
-                              {page}
-                            </PaginationLink>
-                          </PaginationItem>
-                        );
-                      });
-                    })()}
-                    <PaginationItem>
-                      <button
-                        onClick={() => handleCategoryPageChange(Math.min(totalCategoryPages, categoryPage + 1))}
-                        className={"text-sm px-3 py-1 rounded border ml-1 " + (categoryPage === totalCategoryPages ? 'pointer-events-none opacity-50' : 'cursor-pointer')}
-                        disabled={categoryPage === totalCategoryPages}
-                      >下一页</button>
-                    </PaginationItem>
-                  </PaginationContent>
-                </Pagination>
-              </div>
-            </div>
+          {categories.length === 0 && !loadingCategories && (
+            <div className="text-center py-12 text-gray-500">暂无题目分类</div>
+          )}
+          {categories.length > 0 && (
+            <p className="mt-6 text-sm text-gray-600">
+              共 {categories.length} 个一级分类，{countCategories(categories)} 个分类（含子分类）
+            </p>
           )}
         </TabsContent>
 
         <TabsContent value="questions">
           <div id="question-list-section" className="space-y-4">
             <div className="flex flex-wrap gap-2 items-center mb-2">
-              <Select value={selectedCategory} onValueChange={value => { setSelectedCategory(value); setPage(1); }}>
+              <Select value={filterCategory} onValueChange={value => setFilterCategory(value)}>
                 <SelectTrigger className="w-40"><SelectValue placeholder="选择题目分类筛选" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部题目分类</SelectItem>
@@ -1101,21 +1163,27 @@ const QuestionBankManager: React.FC = () => {
                   <SelectItem value="hard">困难</SelectItem>
                 </SelectContent>
               </Select>
+              <Select value={filterStatus} onValueChange={v => setFilterStatus(v as '1' | '0' | 'all')}>
+                <SelectTrigger className="w-28"><SelectValue placeholder="状态" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">启用</SelectItem>
+                  <SelectItem value="0">停用</SelectItem>
+                  <SelectItem value="all">全部状态</SelectItem>
+                </SelectContent>
+              </Select>
               <Input className="w-20" type="number" min={0} placeholder="分数≥" value={filterScoreMin} onChange={e => setFilterScoreMin(e.target.value)} />
               <Input className="w-20" type="number" min={0} placeholder="分数≤" value={filterScoreMax} onChange={e => setFilterScoreMax(e.target.value)} />
-              <Input className="w-64" placeholder="输入题目关键词查询" value={searchKeyword} onChange={e => { setSearchKeyword(e.target.value); setPage(1); }} />
-              {selectedCategory !== 'all' && <Button variant="outline" onClick={() => setSelectedCategory('all')}>清除筛选</Button>}
+              <Input className="w-56" placeholder="输入题目关键词查询" value={searchKeyword} onChange={e => setSearchKeyword(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleQuestionSearch()} />
+              <Button onClick={handleQuestionSearch}>查询</Button>
+              {(appliedFilters.categoryId !== 'all' || appliedFilters.type !== 'all' || appliedFilters.difficulty !== 'all' || appliedFilters.scoreMin || appliedFilters.scoreMax || appliedFilters.keyword || appliedFilters.status !== '1') && (
+                <Button variant="outline" onClick={handleQuestionClearFilters}>清除筛选</Button>
+              )}
             </div>
-            {/* <div className="flex justify-center items-center space-x-4 mt-6">
-              <span className="text-sm text-gray-600 mr-4">共 {filteredQuestions.length} 题，当前第 {page}/{totalPages || 1} 页</span>
-              <Button variant="outline" disabled={page === 1} onClick={() => setPage(p => Math.max(1, p - 1))}>上一页</Button>
-              <Button variant="outline" disabled={page === totalPages || totalPages === 0} onClick={() => setPage(p => Math.min(totalPages, p + 1))}>下一页</Button>
-            </div> */}
-            {filteredQuestions.length === 0 ? (
+            {pagedQuestions.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-gray-500 text-lg mb-4">
-                  {selectedCategory !== 'all'
-                    ? `${getCategoryNameById(options?.categories, selectedCategory) || selectedCategory}题目分类暂无题目`
+                  {appliedFilters.categoryId !== 'all'
+                    ? `${getCategoryNameById(options?.categories, appliedFilters.categoryId) || appliedFilters.categoryId}题目分类暂无题目`
                     : '题库中暂无题目'}
                 </p>
                 <Button onClick={() => setIsDialogOpen(true)}>添加第一道题目</Button>
@@ -1147,6 +1215,9 @@ const QuestionBankManager: React.FC = () => {
                             </span>
                             <span className="px-2 py-1 text-xs bg-purple-100 text-purple-800 rounded">{question.score}分</span>
                             <span className={`px-2 py-1 text-xs rounded ${getDifficultyColor(question.difficulty)}`}>{getDifficultyText(question.difficulty)}</span>
+                            {question.status === '0' && (
+                              <span className="px-2 py-1 text-xs rounded bg-gray-200 text-gray-600">已停用</span>
+                            )}
                             <span className="ml-2 text-base text-gray-800 font-medium">{question.content}</span>
                           </div>
                         </AccordionTrigger>
@@ -1231,6 +1302,9 @@ const QuestionBankManager: React.FC = () => {
                               setEditQuestionForm({ ...question, options });
                             }
                           }}>编辑</Button>
+                          <Button size="sm" variant="outline" onClick={() => handleToggleQuestionStatus(question)}>
+                            {question.status === '0' ? '启用' : '停用'}
+                          </Button>
                           <Button size="sm" variant="destructive" onClick={() => setDeleteDialog({ open: true, type: 'single', id: question.id })}>删除</Button>
                         </div>
                       </AccordionContent>
@@ -1245,85 +1319,13 @@ const QuestionBankManager: React.FC = () => {
                 <p className="text-sm text-gray-600 whitespace-nowrap mb-2 md:mb-0">
                   显示 {(questionPage - 1) * questionPageSize + 1} 到 {Math.min(questionPage * questionPageSize, totalQuestionRows)} 条，共 {totalQuestionRows} 条记录
                 </p>
-                <div className="w-full md:w-auto min-w-0">
-                  <Pagination className="max-w-full">
-                    <PaginationContent className="flex-wrap justify-center gap-1">
-                      <PaginationItem>
-                        <button
-                          onClick={() => handleQuestionPageChange(Math.max(1, questionPage - 1))}
-                          className={"text-sm px-3 py-1 rounded border mr-1 " + (questionPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer')}
-                          disabled={questionPage === 1}
-                        >上一页</button>
-                      </PaginationItem>
-                      {/* 显示页码 - 智能分页，最多显示7个页码，使用省略号 */}
-                      {(() => {
-                        const maxVisiblePages = 7;
-                        const pages: (number | 'ellipsis')[] = [];
-                        
-                        if (totalQuestionPages <= maxVisiblePages) {
-                          // 如果总页数少于等于7，显示所有页码
-                          for (let i = 1; i <= totalQuestionPages; i++) {
-                            pages.push(i);
-                          }
-                        } else {
-                          // 始终显示第一页
-                          pages.push(1);
-                          
-                          if (questionPage <= 4) {
-                            // 当前页在前4页，显示 1 2 3 4 5 ... 最后一页
-                            for (let i = 2; i <= 5; i++) {
-                              pages.push(i);
-                            }
-                            pages.push('ellipsis');
-                            pages.push(totalQuestionPages);
-                          } else if (questionPage >= totalQuestionPages - 3) {
-                            // 当前页在后4页，显示 1 ... 倒数4页 最后一页
-                            pages.push('ellipsis');
-                            for (let i = totalQuestionPages - 4; i <= totalQuestionPages; i++) {
-                              pages.push(i);
-                            }
-                          } else {
-                            // 当前页在中间，显示 1 ... 当前页前后各2页 ... 最后一页
-                            pages.push('ellipsis');
-                            for (let i = questionPage - 2; i <= questionPage + 2; i++) {
-                              pages.push(i);
-                            }
-                            pages.push('ellipsis');
-                            pages.push(totalQuestionPages);
-                          }
-                        }
-                        
-                        return pages.map((page, index) => {
-                          if (page === 'ellipsis') {
-                            return (
-                              <PaginationItem key={`ellipsis-${index}`}>
-                                <PaginationEllipsis />
-                              </PaginationItem>
-                            );
-                          }
-                          return (
-                            <PaginationItem key={page}>
-                              <PaginationLink
-                                onClick={() => handleQuestionPageChange(page)}
-                                isActive={questionPage === page}
-                                className="text-sm cursor-pointer"
-                              >
-                                {page}
-                              </PaginationLink>
-                            </PaginationItem>
-                          );
-                        });
-                      })()}
-                      <PaginationItem>
-                        <button
-                          onClick={() => handleQuestionPageChange(Math.min(totalQuestionPages, questionPage + 1))}
-                          className={"text-sm px-3 py-1 rounded border ml-1 " + (questionPage === totalQuestionPages ? 'pointer-events-none opacity-50' : 'cursor-pointer')}
-                          disabled={questionPage === totalQuestionPages}
-                        >下一页</button>
-                      </PaginationItem>
-                    </PaginationContent>
-                  </Pagination>
-                </div>
+                <SmartPagination
+                  currentPage={questionPage}
+                  totalPages={totalQuestionPages}
+                  onPageChange={handleQuestionPageChange}
+                  prevText="上一页"
+                  nextText="下一页"
+                />
               </div>
             )}
             <Dialog open={!!editingQuestion} onOpenChange={open => { if (!open) setEditingQuestion(null); }}>
@@ -1605,7 +1607,7 @@ const QuestionBankManager: React.FC = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">无（顶级分类）</SelectItem>
-                  {getAllCategoryOptions(categories).map(option => (
+                  {getAllCategoryOptions(excludeCategorySubtree(categories, editingCategory?.categoryId)).map(option => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
                     </SelectItem>
@@ -1614,7 +1616,7 @@ const QuestionBankManager: React.FC = () => {
               </Select>
             </div>
             <div>
-              <Label>排序顺序</Label>
+              <Label>排序顺序（数字越小越靠前）</Label>
               <Input 
                 type="number" 
                 value={editCategoryForm.sortOrder} 
@@ -1711,6 +1713,28 @@ const QuestionBankManager: React.FC = () => {
                 }
                 setDeleteDialog(d => ({ ...d, open: false }));
               }}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 分类删除确认对话框 */}
+      <AlertDialog open={categoryDeleteDialogOpen} onOpenChange={(open) => { setCategoryDeleteDialogOpen(open); if (!open) setCategoryToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除题目分类</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除题目分类"{categoryToDelete?.categoryName}"吗？
+              若该分类下存在题目或子分类，删除将被拒绝，请先处理相关数据。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmDeleteCategory}
               className="bg-red-600 hover:bg-red-700"
             >
               删除

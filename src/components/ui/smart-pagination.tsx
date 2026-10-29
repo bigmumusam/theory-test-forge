@@ -1,83 +1,93 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationEllipsis } from '@/components/ui/pagination';
 
 interface SmartPaginationProps {
   currentPage: number;
   totalPages: number;
   onPageChange: (page: number) => void;
-  maxVisiblePages?: number;
+  /** 当前页左右各显示几个页码（默认1），首页和末页始终显示 */
+  siblingCount?: number;
   showPrevNext?: boolean;
+  /** 是否显示"跳至第 N 页"输入框（默认true） */
+  showJumper?: boolean;
   prevText?: string;
   nextText?: string;
   className?: string;
 }
 
+type PageItem = number | 'ellipsis-left' | 'ellipsis-right';
+
+const generatePages = (currentPage: number, totalPages: number, siblingCount: number): PageItem[] => {
+  // 首页 + 末页 + 当前页 + 两侧页码 + 两个省略号
+  const maxSlots = siblingCount * 2 + 5;
+  if (totalPages <= maxSlots) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  }
+
+  const start = Math.max(2, currentPage - siblingCount);
+  const end = Math.min(totalPages - 1, currentPage + siblingCount);
+  const pages: PageItem[] = [1];
+  if (start > 2) pages.push('ellipsis-left');
+  for (let i = start; i <= end; i++) pages.push(i);
+  if (end < totalPages - 1) pages.push('ellipsis-right');
+  pages.push(totalPages);
+  return pages;
+};
+
+const PageJumper: React.FC<{ totalPages: number; onJump: (page: number) => void }> = ({ totalPages, onJump }) => {
+  const [value, setValue] = useState('');
+
+  const jump = () => {
+    const page = Number(value);
+    if (!Number.isInteger(page) || value.trim() === '') return;
+    onJump(Math.min(totalPages, Math.max(1, page)));
+    setValue('');
+  };
+
+  return (
+    <div className="flex items-center gap-1 text-sm text-gray-600 whitespace-nowrap">
+      <span>跳至</span>
+      <input
+        type="number"
+        min={1}
+        max={totalPages}
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && jump()}
+        className="w-14 h-8 px-2 rounded border border-gray-300 text-center focus:outline-none focus:ring-1 focus:ring-blue-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        aria-label="跳转页码"
+      />
+      <span>页</span>
+      <button
+        type="button"
+        onClick={jump}
+        className="ml-1 px-2 h-8 rounded border text-sm cursor-pointer hover:bg-gray-50"
+      >
+        跳转
+      </button>
+    </div>
+  );
+};
+
 /**
- * 智能分页组件 - 自动使用省略号，避免样式溢出
- * @param currentPage - 当前页码
- * @param totalPages - 总页数
- * @param onPageChange - 页码变化回调
- * @param maxVisiblePages - 最多显示的页码数（默认7个）
- * @param showPrevNext - 是否显示上一页/下一页按钮（默认true）
- * @param prevText - 上一页按钮文本（默认"上一页"）
- * @param nextText - 下一页按钮文本（默认"下一页"）
- * @param className - 自定义类名
+ * 智能分页组件：只显示首页、末页和当前页附近的页码，其余用省略号；支持输入页码跳转
  */
 const SmartPagination: React.FC<SmartPaginationProps> = ({
   currentPage,
   totalPages,
   onPageChange,
-  maxVisiblePages = 7,
+  siblingCount = 1,
   showPrevNext = true,
+  showJumper = true,
   prevText = '上一页',
   nextText = '下一页',
   className = ''
 }) => {
-  // 生成页码数组，包含数字和省略号
-  const generatePages = (): (number | 'ellipsis')[] => {
-    const pages: (number | 'ellipsis')[] = [];
-    
-    if (totalPages <= maxVisiblePages) {
-      // 如果总页数少于等于最大显示页数，显示所有页码
-      for (let i = 1; i <= totalPages; i++) {
-        pages.push(i);
-      }
-    } else {
-      // 始终显示第一页
-      pages.push(1);
-      
-      if (currentPage <= 4) {
-        // 当前页在前4页，显示 1 2 3 4 5 ... 最后一页
-        for (let i = 2; i <= 5; i++) {
-          pages.push(i);
-        }
-        pages.push('ellipsis');
-        pages.push(totalPages);
-      } else if (currentPage >= totalPages - 3) {
-        // 当前页在后4页，显示 1 ... 倒数4页 最后一页
-        pages.push('ellipsis');
-        for (let i = totalPages - 4; i <= totalPages; i++) {
-          pages.push(i);
-        }
-      } else {
-        // 当前页在中间，显示 1 ... 当前页前后各2页 ... 最后一页
-        pages.push('ellipsis');
-        for (let i = currentPage - 2; i <= currentPage + 2; i++) {
-          pages.push(i);
-        }
-        pages.push('ellipsis');
-        pages.push(totalPages);
-      }
-    }
-    
-    return pages;
-  };
-
-  const pages = generatePages();
+  const pages = generatePages(currentPage, totalPages, siblingCount);
 
   return (
-    <div className={`w-full md:w-auto min-w-0 ${className}`}>
-      <Pagination className="max-w-full">
+    <div className={`w-full md:w-auto min-w-0 flex flex-wrap items-center justify-center gap-3 ${className}`}>
+      <Pagination className="mx-0 w-auto max-w-full">
         <PaginationContent className="flex-wrap justify-center gap-1">
           {showPrevNext && (
             <PaginationItem>
@@ -90,12 +100,11 @@ const SmartPagination: React.FC<SmartPaginationProps> = ({
               </button>
             </PaginationItem>
           )}
-          
-          {/* 显示页码 */}
-          {pages.map((page, index) => {
-            if (page === 'ellipsis') {
+
+          {pages.map(page => {
+            if (typeof page !== 'number') {
               return (
-                <PaginationItem key={`ellipsis-${index}`}>
+                <PaginationItem key={page}>
                   <PaginationEllipsis />
                 </PaginationItem>
               );
@@ -112,13 +121,13 @@ const SmartPagination: React.FC<SmartPaginationProps> = ({
               </PaginationItem>
             );
           })}
-          
+
           {showPrevNext && (
             <PaginationItem>
               <button
                 onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
-                disabled={currentPage === totalPages}
-                className={"text-sm px-3 py-1 rounded border ml-1 " + (currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer')}
+                disabled={currentPage >= totalPages}
+                className={"text-sm px-3 py-1 rounded border ml-1 " + (currentPage >= totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer')}
               >
                 {nextText}
               </button>
@@ -126,6 +135,8 @@ const SmartPagination: React.FC<SmartPaginationProps> = ({
           )}
         </PaginationContent>
       </Pagination>
+
+      {showJumper && totalPages > 1 && <PageJumper totalPages={totalPages} onJump={onPageChange} />}
     </div>
   );
 };

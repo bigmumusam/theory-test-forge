@@ -12,20 +12,14 @@ import {
   TableHeader, 
   TableRow 
 } from '@/components/ui/table';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination';
+import SmartPagination from '@/components/ui/smart-pagination';
 import { Eye, Download, Trash2, RefreshCw, Search, Users } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useOptions } from '@/context/OptionsContext';
 import { post } from '@/lib/request';
 import { ExamPaperListItem, ExamPaperQueryParams, ExamPaperListResponse } from '@/types/exam';
 import PreviewExamPaperDialog from './PreviewExamPaperDialog';
+import ExamStatusDetailTable, { ExamStatusDetail } from './ExamStatusDetailTable';
 import { ApiResponse } from '@/types/api';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { 
@@ -84,7 +78,7 @@ const ExamPaperList: React.FC = () => {
   const [total, setTotal] = useState(0);
   const [pageSize] = useState(10);
   
-  // 筛选条件
+  // 已提交的查询条件（变化即请求）
   const [filters, setFilters] = useState<ExamPaperQueryParams>({
     paperName: '',
     categoryId: '',
@@ -92,6 +86,8 @@ const ExamPaperList: React.FC = () => {
     pageNumber: 1,
     pageSize: 10
   });
+  // 筛选区正在编辑的条件，点击"查询"后才提交到 filters
+  const [draftFilters, setDraftFilters] = useState({ paperName: '', categoryId: '', status: '' });
 
   const { toast } = useToast();
   const { options } = useOptions();
@@ -99,7 +95,7 @@ const ExamPaperList: React.FC = () => {
   // 考试情况相关状态
   const [examStatusDialogOpen, setExamStatusDialogOpen] = useState(false);
   const [examStatusData, setExamStatusData] = useState<any>(null);
-  const [examDetailData, setExamDetailData] = useState<any[]>([]);
+  const [examDetailData, setExamDetailData] = useState<ExamStatusDetail[]>([]);
   const [loadingExamStatus, setLoadingExamStatus] = useState(false);
 
   const [previewPaper, setPreviewPaper] = useState<ExamPaperListItem | null>(null);
@@ -154,16 +150,8 @@ const ExamPaperList: React.FC = () => {
     fetchPapers(filters);
   }, [filters]);
 
-  // 处理筛选条件变化
-  const handleFilterChange = (key: keyof ExamPaperQueryParams, value: string | number) => {
-    let realValue = value;
-    if (key === 'categoryId' && value === ALL_VALUE) realValue = '';
-    if (key === 'status' && value === ALL_VALUE) realValue = '';
-    setFilters(prev => ({
-      ...prev,
-      [key]: realValue,
-      pageNumber: 1 // 重置到第一页
-    }));
+  const handleFilterChange = (key: 'paperName' | 'categoryId' | 'status', value: string) => {
+    setDraftFilters(prev => ({ ...prev, [key]: value === ALL_VALUE ? '' : value }));
   };
 
   // 处理分页变化
@@ -174,16 +162,17 @@ const ExamPaperList: React.FC = () => {
     }));
   };
 
-  // 处理搜索
   const handleSearch = () => {
     setFilters(prev => ({
       ...prev,
+      ...draftFilters,
       pageNumber: 1
     }));
   };
 
   // 重置筛选
   const handleReset = () => {
+    setDraftFilters({ paperName: '', categoryId: '', status: '' });
     setFilters({
       paperName: '',
       categoryId: '',
@@ -359,12 +348,12 @@ const ExamPaperList: React.FC = () => {
 
       {/* 筛选区域 */}
       <Card className="p-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
           <div>
             <div className="flex space-x-2">
               <Input
                 placeholder="请输入试卷名称"
-                value={filters.paperName}
+                value={draftFilters.paperName}
                 onChange={(e) => handleFilterChange('paperName', e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
               />
@@ -373,7 +362,7 @@ const ExamPaperList: React.FC = () => {
 
           <div>
             <Select
-              value={filters.categoryId || ALL_VALUE}
+              value={draftFilters.categoryId || ALL_VALUE}
               onValueChange={(value) => handleFilterChange('categoryId', value)}
             >
               <SelectTrigger>
@@ -388,7 +377,7 @@ const ExamPaperList: React.FC = () => {
 
           <div>
             <Select
-              value={filters.status || ALL_VALUE}
+              value={draftFilters.status || ALL_VALUE}
               onValueChange={(value) => handleFilterChange('status', value)}
             >
               <SelectTrigger>
@@ -402,6 +391,11 @@ const ExamPaperList: React.FC = () => {
             </Select>
           </div>
 
+          <div className="flex space-x-2">
+            <Button onClick={handleSearch} className="flex-1">
+              查询
+            </Button>
+          </div>
           <div className="flex space-x-2">
           <Button 
             variant="outline" 
@@ -447,11 +441,22 @@ const ExamPaperList: React.FC = () => {
                 ) : (
                   papers.map((paper) => (
                     <TableRow key={paper.paperId}>
-                      <TableCell className="font-medium">{paper.paperName}</TableCell>
+                      <TableCell className="font-medium">
+                        <div>{paper.paperName}</div>
+                        {paper.configDeleted && (
+                          <Badge
+                            variant="outline"
+                            className="mt-1 bg-orange-50 text-orange-700 border-orange-200 whitespace-nowrap"
+                            title={`关联的考试配置「${paper.configName || '-'}」已被删除，试卷仍按原配置的规则使用`}
+                          >
+                            配置已删除
+                          </Badge>
+                        )}
+                      </TableCell>
                       <TableCell>{paper.categoryName || getCategoryNameById(options?.categories, paper.categoryId) || paper.categoryId}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className="bg-blue-50 text-blue-700">
-                          {paper.userCategories || '指挥管理军官'}
+                          {paper.userCategories || '-'}
                         </Badge>
                       </TableCell>
                       <TableCell>{paper.totalQuestions}</TableCell>
@@ -511,61 +516,18 @@ const ExamPaperList: React.FC = () => {
             )}
 
             {/* 分页信息和组件 */}
-            {totalPages > 0 && (
-              <div className="mt-4 flex items-center justify-between">
-                {/* 分页信息显示 */}
-                <div className="text-sm text-gray-600">
-                  共 {total} 条记录，第 {currentPage} 页，共 {totalPages} 页
-                </div>
-                
-                {/* 分页组件 */}
-                <div>
-                <Pagination>
-                  <PaginationContent>
-                    <PaginationItem>
-                      <PaginationPrevious 
-                        onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
-                        className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                      />
-                    </PaginationItem>
-                    
-                    {/* 显示页码，最多显示5个页码 */}
-                    {(() => {
-                      const pages = [];
-                      const maxVisiblePages = 5;
-                      let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
-                      let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
-                      
-                      if (endPage - startPage + 1 < maxVisiblePages) {
-                        startPage = Math.max(1, endPage - maxVisiblePages + 1);
-                      }
-                      
-                      for (let i = startPage; i <= endPage; i++) {
-                        pages.push(i);
-                      }
-                      
-                      return pages.map((page) => (
-                        <PaginationItem key={page}>
-                          <PaginationLink
-                            onClick={() => handlePageChange(page)}
-                            isActive={currentPage === page}
-                            className="cursor-pointer"
-                          >
-                            {page}
-                          </PaginationLink>
-                        </PaginationItem>
-                      ));
-                    })()}
-                    
-                    <PaginationItem>
-                      <PaginationNext 
-                        onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
-                        className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                      />
-                    </PaginationItem>
-                  </PaginationContent>
-                </Pagination>
-                </div>
+            {total > 0 && (
+              <div className="mt-6 flex flex-col md:flex-row md:justify-between md:items-center gap-2">
+                <p className="text-sm text-gray-600 whitespace-nowrap mb-2 md:mb-0">
+                  显示 {(currentPage - 1) * pageSize + 1} 到 {Math.min(currentPage * pageSize, total)} 条，共 {total} 条记录
+                </p>
+                <SmartPagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={handlePageChange}
+                  prevText="上一页"
+                  nextText="下一页"
+                />
               </div>
             )}
           </>
@@ -590,7 +552,7 @@ const ExamPaperList: React.FC = () => {
                 <div className="bg-green-50 p-4 rounded-lg">
                   <div className="text-sm text-green-600 whitespace-nowrap">人员类别</div>
                   <div className="text-lg font-semibold text-green-800 break-words">
-                    {examStatusData.userCategories || '指挥管理军官'}
+                    {examStatusData.userCategory || '-'}
                   </div>
                 </div>
                 <div className="bg-purple-50 p-4 rounded-lg">
@@ -629,53 +591,7 @@ const ExamPaperList: React.FC = () => {
                     下载人员列表
                   </Button>
                 </div>
-                <div className="border rounded-lg overflow-hidden">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>姓名</TableHead>
-                        <TableHead>身份证号</TableHead>
-                        <TableHead>部门</TableHead>
-                        <TableHead>人员类别</TableHead>
-                        <TableHead>考试状态</TableHead>
-                        <TableHead>考试日期</TableHead>
-                        <TableHead>分数</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {examDetailData.map((detail, index) => (
-                        <TableRow key={index}>
-                          <TableCell className="font-medium">{detail.userName}</TableCell>
-                          <TableCell className="font-mono text-sm">{detail.idNumber}</TableCell>
-                          <TableCell>{detail.department}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="bg-blue-50 text-blue-700">
-                              {detail.userCategory || '指挥管理军官'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge 
-                              variant={detail.examStatus === '已考试' ? 'default' : 'secondary'}
-                              className={detail.examStatus === '已考试' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}
-                            >
-                              {detail.examStatus}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{detail.examDate || '-'}</TableCell>
-                          <TableCell>
-                            {detail.score !== null ? (
-                              <span className={`font-semibold ${
-                                detail.score >= 60 ? 'text-green-600' : 'text-red-600'
-                              }`}>
-                                {detail.score}分
-                              </span>
-                            ) : '-'}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                <ExamStatusDetailTable details={examDetailData} />
               </div>
             </div>
           )}

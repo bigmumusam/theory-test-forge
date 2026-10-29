@@ -12,6 +12,8 @@ public class ExamResultQueryDTO {
     private String passStatus; // 及格状态：pass(及格), fail(不及格)
     private String retakeStatus; // 重考状态：all(全部), retake(重考), normal(正常考试)
     private String examName; // 考试名称筛选
+    private String startTime; // 考试时间范围-开始（yyyy-MM-dd）
+    private String endTime; // 考试时间范围-结束（yyyy-MM-dd）
     private Boolean includeDeleted; // 是否包含已删除的记录，true:包含已删除, false/null:不包含已删除
     private Boolean onlyDeleted; // 是否只查询已删除的记录，true:只查询已删除, false/null:查询未删除或全部
     @NotNull(message = "页码不能为空")

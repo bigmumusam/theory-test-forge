@@ -10,5 +10,5 @@ ALTER TABLE `exam_config` ADD COLUMN `user_category` varchar(20) DEFAULT '指挥
 -- 更新现有数据，设置默认值
 UPDATE `exam_config` SET `user_category` = '指挥管理军官' WHERE `user_category` IS NULL;
 
--- 移除exam_question表中的score字段，分值现在在exam_config中定义
-ALTER TABLE `exam_question` DROP COLUMN `score`;
+-- 已废弃：当前代码仍在使用 exam_question.score（题目分数筛选、导入），不要执行
+-- ALTER TABLE `exam_question` DROP COLUMN `score`;

@@ -33,6 +33,8 @@ const UserManager = () => {
   const [selectedDepartment, setSelectedDepartment] = useState('all');
   const [selectedUserCategory, setSelectedUserCategory] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
+  // 已提交的查询条件（点击"查询"按钮后才更新）
+  const [appliedFilters, setAppliedFilters] = useState({ keyword: '', role: 'all', department: 'all', userCategory: 'all', status: 'all' });
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -59,11 +61,11 @@ const UserManager = () => {
       const params = {
         pageNumber: currentPage,
         pageSize,
-        keyword: searchKeyword,
-        role: selectedRole === 'all' ? undefined : selectedRole,
-        department: selectedDepartment === 'all' ? undefined : selectedDepartment,
-        userCategory: selectedUserCategory === 'all' ? undefined : selectedUserCategory,
-        status: selectedStatus === 'all' ? undefined : selectedStatus
+        keyword: appliedFilters.keyword,
+        role: appliedFilters.role === 'all' ? undefined : appliedFilters.role,
+        department: appliedFilters.department === 'all' ? undefined : appliedFilters.department,
+        userCategory: appliedFilters.userCategory === 'all' ? undefined : appliedFilters.userCategory,
+        status: appliedFilters.status === 'all' ? undefined : appliedFilters.status
       };
       const res = await request('/auth/users/list', {
         method: 'POST',
@@ -80,7 +82,19 @@ const UserManager = () => {
   useEffect(() => {
     fetchUsers();
     // eslint-disable-next-line
-  }, [currentPage, selectedRole, selectedDepartment, selectedUserCategory, selectedStatus, searchKeyword]);
+  }, [currentPage, appliedFilters]);
+
+  // 点击"查询"：提交筛选条件并回到第一页
+  const handleSearch = () => {
+    setCurrentPage(1);
+    setAppliedFilters({
+      keyword: searchKeyword,
+      role: selectedRole,
+      department: selectedDepartment,
+      userCategory: selectedUserCategory,
+      status: selectedStatus
+    });
+  };
 
   const handleAddUser = () => {
     setEditingUser(null);
@@ -190,6 +204,7 @@ const UserManager = () => {
     setSelectedUserCategory('all');
     setSelectedStatus('all');
     setCurrentPage(1);
+    setAppliedFilters({ keyword: '', role: 'all', department: 'all', userCategory: 'all', status: 'all' });
   };
 
   return (
@@ -308,8 +323,8 @@ const UserManager = () => {
                 value={searchKeyword}
                 onChange={(e) => {
                   setSearchKeyword(e.target.value);
-                  setCurrentPage(1);
                 }}
+                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
                 className="pl-10"
               />
             </div>
@@ -318,7 +333,6 @@ const UserManager = () => {
             value={selectedUserCategory}
             onValueChange={(v) => {
               setSelectedUserCategory(v);
-              setCurrentPage(1);
             }}
           >
             <SelectTrigger className="w-40">
@@ -337,7 +351,6 @@ const UserManager = () => {
             value={selectedRole}
             onValueChange={(v) => {
               setSelectedRole(v);
-              setCurrentPage(1);
             }}
           >
             <SelectTrigger className="w-40">
@@ -354,7 +367,6 @@ const UserManager = () => {
             value={selectedDepartment}
             onValueChange={(v) => {
               setSelectedDepartment(v);
-              setCurrentPage(1);
             }}
           >
             <SelectTrigger className="w-40">
@@ -371,7 +383,6 @@ const UserManager = () => {
             value={selectedStatus}
             onValueChange={(v) => {
               setSelectedStatus(v);
-              setCurrentPage(1);
             }}
           >
             <SelectTrigger className="w-32">
@@ -383,6 +394,10 @@ const UserManager = () => {
               <SelectItem value="0">停用</SelectItem>
             </SelectContent>
           </Select>
+          <Button onClick={handleSearch}>
+            <Search className="w-4 h-4 mr-1" />
+            查询
+          </Button>
           {(searchKeyword || selectedRole !== 'all' || selectedDepartment !== 'all' || selectedUserCategory !== 'all' || selectedStatus !== 'all') && (
             <Button variant="outline" onClick={clearFilters}>
               清除筛选

@@ -26,6 +26,8 @@ public class ExamPaperVo {
     private Date updateTime;
     private String remark;
     private String userCategories; // 人员类别（多个类别用逗号分隔）
+    private String configName;
+    private Boolean configDeleted; // 关联的考试配置已被逻辑删除
 
     private String finished;
 } 

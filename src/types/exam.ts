@@ -8,6 +8,7 @@ export interface Question {
   score: number;
   difficulty: 'easy' | 'medium' | 'hard';
   remark?: string;
+  status?: string; // 1:启用 0:停用
 }
 
 export interface ExamPaper {
@@ -37,6 +38,8 @@ export interface ExamPaperListItem {
   status: string;
   usageCount: number;
   userCategories: string; // 人员类别（多个类别用逗号分隔）
+  configName?: string;
+  configDeleted?: boolean; // 关联的考试配置已被删除
 }
 
 // 试卷列表查询参数

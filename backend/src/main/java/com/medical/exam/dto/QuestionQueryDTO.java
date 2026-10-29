@@ -12,6 +12,7 @@ public class QuestionQueryDTO {
     private String keyword;
     private Integer scoreMin;
     private Integer scoreMax;
+    private String status; // 1:启用 0:停用 all:全部，不传默认只查启用
     @NotNull(message = "页码不能为空")
     @Min(value = 1, message = "页码最小为1")
     private Integer pageNumber = 1;

@@ -61,8 +61,8 @@ public class ExamController {
 
     @PostMapping("/start")
     public Result<?> startExam(@RequestBody StartExamDTO request) {
-        String recordId = examService.startExam(request);
-        return Result.success("考试开始", Map.of("recordId", recordId));
+        Map<String, Object> startResult = examService.startExam(request);
+        return Result.success("考试开始", startResult);
     }
 
     @PostMapping("/submit")

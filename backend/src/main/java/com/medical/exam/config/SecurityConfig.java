@@ -4,6 +4,7 @@ package com.medical.exam.config;
 import com.medical.exam.security.JwtAuthenticationEntryPoint;
 import com.medical.exam.security.JwtAuthenticationFilter;
 import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -33,12 +34,23 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/auth/**").permitAll()
+                .requestMatchers("/auth/login", "/auth/logout").permitAll()
                 .requestMatchers("/admin/test").permitAll()
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                // 考生考试流程所需接口（任意登录用户）
+                .requestMatchers("/admin/options", "/admin/available-questions/list", "/admin/getQuestionsByPaperId",
+                        "/exam/start", "/exam/submit", "/exam/records", "/exam/records/**").authenticated()
+                // 其余管理接口仅管理员可用
+                .requestMatchers("/admin/**", "/auth/**", "/exam/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
             )
-            .exceptionHandling(ex -> ex.authenticationEntryPoint(jwtAuthenticationEntryPoint))
+            .exceptionHandling(ex -> ex
+                .authenticationEntryPoint(jwtAuthenticationEntryPoint)
+                .accessDeniedHandler((request, response, denied) -> {
+                    response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                    response.setContentType("application/json;charset=UTF-8");
+                    response.getWriter().write("{\"code\":403,\"message\":\"无权限执行该操作\"}");
+                }))
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

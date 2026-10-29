@@ -10,7 +10,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface ExamListProps {
   user: User;
-  onStartExam: (exam: ExamPaper) => void;
+  onStartExam: (exam: ExamPaper, serverRemainingSeconds?: number) => void;
 }
 
 interface AvailableExam {
@@ -150,6 +150,8 @@ const ExamList: React.FC<ExamListProps> = ({ user, onStartExam }) => {
       }
       
       const recordId = startResponse.data.recordId;
+      // 服务端计算的剩余秒数（刷新/继续考试场景下不为 -1），用于初始化倒计时
+      const serverRemaining = startResponse.data.remainingSeconds;
       
       // 2. 获取试卷题目
       const response = await post('/admin/getQuestionsByPaperId', {
@@ -177,12 +179,24 @@ const ExamList: React.FC<ExamListProps> = ({ user, onStartExam }) => {
           status: 'in-progress'
         };
         
-        onStartExam(examPaper);
+        onStartExam(examPaper, serverRemaining !== undefined && serverRemaining !== null && serverRemaining >= 0 ? serverRemaining : undefined);
       setShowConfirmDialog(false);
-      toast({
-        title: "考试开始",
-        description: "祝您考试顺利！"
+      if (serverRemaining === 0) {
+        toast({
+          title: "考试时间已结束",
+          description: "刷新前的作答已清空，系统将自动交卷"
         });
+      } else if (serverRemaining !== undefined && serverRemaining !== null && serverRemaining > 0) {
+        toast({
+          title: "继续考试",
+          description: `刷新前的作答已清空，请重新作答。剩余时间 ${Math.floor(Number(serverRemaining) / 60)} 分 ${Number(serverRemaining) % 60} 秒`
+        });
+      } else {
+        toast({
+          title: "考试开始",
+          description: "祝您考试顺利！"
+        });
+      }
       } else {
         toast({
           title: "加载失败",

@@ -13,12 +13,17 @@ interface ExamSessionProps {
   exam: ExamPaper;
   user: User;
   onComplete: () => void;
+  /** 服务端计算的剩余秒数（刷新场景下由 /exam/start 返回），-1 或缺省表示新考试使用完整时长 */
+  remainingSeconds?: number;
 }
 
-const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => {
+const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete, remainingSeconds }) => {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, any>>({});
-  const [timeRemaining, setTimeRemaining] = useState(exam.duration * 60); // 转换为秒
+  // 优先使用服务端返回的剩余秒数（防止刷新页面重置倒计时）
+  const [timeRemaining, setTimeRemaining] = useState(
+    remainingSeconds !== undefined && remainingSeconds >= 0 ? remainingSeconds : exam.duration * 60
+  );
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
   const [examResult, setExamResult] = useState<{ score: number; totalScore: number; correctCount: number; totalQuestions: number } | null>(null);
   const [isExamCompleted, setIsExamCompleted] = useState(false);
@@ -63,7 +68,7 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (!isExamCompleted) {
         e.preventDefault();
-        e.returnValue = '考试进行中，刷新页面将丢失答题进度，确定要离开吗？';
+        e.returnValue = '强制刷新会清空已答题记录，且考试计时不会暂停，确定要离开吗？';
         return e.returnValue;
       }
     };
@@ -81,7 +86,8 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
 
     // 监听键盘快捷键刷新
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!isExamCompleted && (e.ctrlKey || e.metaKey) && e.key === 'r') {
+      const isRefreshKey = e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r');
+      if (!isExamCompleted && isRefreshKey) {
         e.preventDefault();
         setShowRefreshWarning(true);
       }
@@ -868,7 +874,7 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
               </div>
               <h3 className="text-lg font-semibold text-gray-800 mb-2">确定要刷新页面吗？</h3>
               <p className="text-gray-600 text-sm">
-                刷新页面将丢失当前答题进度，需要重新开始考试。
+                强制刷新会清空已答题记录，且考试计时不会暂停。
               </p>
             </div>
             
@@ -881,7 +887,7 @@ const ExamSession: React.FC<ExamSessionProps> = ({ exam, user, onComplete }) => 
                   <p className="font-medium mb-1">温馨提示：</p>
                   <p>• 已答题：{getAnsweredCount()}/{exam.questions.length} 题</p>
                   <p>• 剩余时间：{formatTime(timeRemaining)}</p>
-                  <p>• 刷新后将重新开始考试</p>
+                  <p>• 刷新后已答的 {getAnsweredCount()} 题将被清空，需要重新作答</p>
                 </div>
               </div>
             </div>

@@ -254,6 +254,19 @@ public class AdminController {
         String paperId = request.get("paperId").toString();
         adminService.exportPaperPersonnelList(paperId, response);
     }
+
+    // 导出所有题目（按导入新格式：sheet1选择题/多选题，sheet2判断题）
+    @PostMapping("/questions/export")
+    public void exportQuestions(jakarta.servlet.http.HttpServletResponse response) {
+        adminService.exportQuestions(response);
+    }
+
+    // 删除题目分类
+    @PostMapping("/categories/delete")
+    public Result<?> deleteCategory(@RequestBody Map<String, Object> request) {
+        adminService.deleteCategory(request.get("categoryId").toString());
+        return Result.success("题目分类删除成功");
+    }
 }
 
 

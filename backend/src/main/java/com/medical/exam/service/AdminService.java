@@ -20,6 +20,7 @@ import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.core.row.Db;
 import com.mybatisflex.core.row.Row;
 import com.mybatisflex.core.row.RowUtil;
+import com.mybatisflex.core.update.UpdateChain;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -148,6 +149,9 @@ public class AdminService {
             queryWrapper.and(EXAM_RECORD.EXAM_NAME.like(request.getExamName()));
         }
 
+        // 添加考试时间范围筛选（按结束时间）
+        applyExamTimeFilter(queryWrapper, request);
+
         Page<ExamResultVo> page = examRecordMapper.paginateAs(request.getPageNumber(), request.getPageSize(),
                 queryWrapper.orderBy(EXAM_RECORD.END_TIME.desc()),
                 ExamResultVo.class);
@@ -160,6 +164,19 @@ public class AdminService {
         }
 
         return page;
+    }
+
+    /**
+     * 为 QueryWrapper 添加考试时间范围筛选（按结束时间 end_time）
+     * startTime/endTime 格式：yyyy-MM-dd
+     */
+    private void applyExamTimeFilter(QueryWrapper queryWrapper, ExamResultQueryDTO request) {
+        if (request.getStartTime() != null && !request.getStartTime().trim().isEmpty()) {
+            queryWrapper.and(EXAM_RECORD.END_TIME.ge(request.getStartTime().trim() + " 00:00:00"));
+        }
+        if (request.getEndTime() != null && !request.getEndTime().trim().isEmpty()) {
+            queryWrapper.and(EXAM_RECORD.END_TIME.le(request.getEndTime().trim() + " 23:59:59"));
+        }
     }
 
     /**
@@ -210,6 +227,9 @@ public class AdminService {
             if (request.getExamName() != null && !request.getExamName().trim().isEmpty()) {
                 queryWrapper.and(EXAM_RECORD.EXAM_NAME.like(request.getExamName()));
             }
+
+            // 添加考试时间范围筛选（按结束时间）
+            applyExamTimeFilter(queryWrapper, request);
 
             // 处理删除状态筛选
             if (Boolean.TRUE.equals(request.getOnlyDeleted())) {
@@ -278,6 +298,16 @@ public class AdminService {
             if (request.getExamName() != null && !request.getExamName().trim().isEmpty()) {
                 whereClause.append(" AND er.exam_name LIKE ?");
                 params.add("%" + request.getExamName() + "%");
+            }
+
+            // 添加考试时间范围筛选（按结束时间）
+            if (request.getStartTime() != null && !request.getStartTime().trim().isEmpty()) {
+                whereClause.append(" AND er.end_time >= ?");
+                params.add(request.getStartTime().trim() + " 00:00:00");
+            }
+            if (request.getEndTime() != null && !request.getEndTime().trim().isEmpty()) {
+                whereClause.append(" AND er.end_time <= ?");
+                params.add(request.getEndTime().trim() + " 23:59:59");
             }
 
             // 处理逻辑删除过滤：如果 includeDeleted 为 false 或 null，则只查询未删除的记录
@@ -440,7 +470,6 @@ public class AdminService {
 
     @Transactional(rollbackFor = Exception.class)
     public void batchArrangeRetakeExam(Map<String, Object> request) {
-        CustomToken customToken = JwtAccessContext.getLoginInfo();
         List<String> recordIds = (List<String>) request.get("recordIds");
 
         // 验证所有记录是否存在且状态正确，同时检查是否已删除
@@ -461,8 +490,8 @@ public class AdminService {
                 throw new RuntimeException("考试记录已删除，无法安排重考: " + recordId);
             }
             
-            // 检查状态是否正确
-            if (!"completed".equals(record.getStatus())) {
+            // 检查状态是否正确（已完成或超时的记录可安排重考）
+            if (!"completed".equals(record.getStatus()) && !"timeout".equals(record.getStatus())) {
                 throw new RuntimeException("考试记录状态不正确，无法安排重考: " + recordId);
             }
         }
@@ -517,11 +546,16 @@ public class AdminService {
     }
 
     public Page<ExamQuestion> getQuestions(QuestionQueryDTO request) {
+        String status = request.getStatus() == null || request.getStatus().isBlank() ? "1" : request.getStatus();
         QueryWrapper queryWrapper = QueryWrapper.create()
-                .where(EXAM_QUESTION.CATEGORY_ID.eq(request.getCategoryId()))
+                .where(EXAM_QUESTION.STATUS.eq(status, !"all".equals(status)))
+                .and(EXAM_QUESTION.CATEGORY_ID.eq(request.getCategoryId()))
                 .and(EXAM_QUESTION.QUESTION_TYPE.eq(request.getQuestionType()))
                 .and(EXAM_QUESTION.DIFFICULTY.eq(request.getDifficulty()))
-                .and(EXAM_QUESTION.QUESTION_CONTENT.like(request.getKeyword()));
+                .and(EXAM_QUESTION.QUESTION_CONTENT.like(request.getKeyword()))
+                .and(EXAM_QUESTION.SCORE.ge(request.getScoreMin()))
+                .and(EXAM_QUESTION.SCORE.le(request.getScoreMax()))
+                .orderBy(EXAM_QUESTION.CREATE_TIME.desc(), EXAM_QUESTION.QUESTION_ID.asc());
         return examQuestionMapper.paginate(request.getPageNumber(), request.getPageSize(), queryWrapper);
     }
 
@@ -856,19 +890,71 @@ public class AdminService {
         examCategoryMapper.insert(category);
     }
 
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
     public void updateCategory(CategoryDTO request) {
         CustomToken customToken = JwtAccessContext.getLoginInfo();
-        examCategoryMapper.update(
-                ExamCategory.builder()
-                        .categoryId(request.getCategoryId())
-                        .categoryName(request.getCategoryName())
-                        .categoryCode(request.getCategoryCode())
-                        .parentId(request.getParentId())
-                        .level(request.getLevel())
-                        .sortOrder(request.getSortOrder())
-                        .remark(request.getRemark())
-                        .updateBy(customToken.getUserName())
-                        .build());
+        String categoryId = request.getCategoryId();
+        String parentId = request.getParentId();
+        if (parentId != null && (parentId.isBlank() || "none".equals(parentId))) {
+            parentId = null;
+        }
+
+        int level = 1;
+        if (parentId != null) {
+            if (parentId.equals(categoryId) || collectDescendantIds(categoryId).contains(parentId)) {
+                throw new CustomException("不能将分类移动到自身或其子分类下");
+            }
+            ExamCategory parent = examCategoryMapper.selectOneById(parentId);
+            if (parent == null) {
+                throw new CustomException("父级分类不存在");
+            }
+            level = (parent.getLevel() != null ? parent.getLevel() : 1) + 1;
+        }
+
+        // 用 UpdateChain 显式更新 parentId：实体 update 会忽略 null，导致无法改回顶级分类
+        UpdateChain.of(ExamCategory.class)
+                .set(EXAM_CATEGORY.CATEGORY_NAME, request.getCategoryName())
+                .set(EXAM_CATEGORY.PARENT_ID, parentId)
+                .set(EXAM_CATEGORY.LEVEL, level)
+                .set(EXAM_CATEGORY.SORT_ORDER, request.getSortOrder() != null ? request.getSortOrder() : 0)
+                .set(EXAM_CATEGORY.REMARK, request.getRemark())
+                .set(EXAM_CATEGORY.UPDATE_BY, customToken.getUserName())
+                .where(EXAM_CATEGORY.CATEGORY_ID.eq(categoryId))
+                .update();
+
+        updateDescendantLevels(categoryId, level);
+    }
+
+    private Set<String> collectDescendantIds(String categoryId) {
+        Set<String> descendants = new HashSet<>();
+        Deque<String> queue = new ArrayDeque<>();
+        queue.add(categoryId);
+        while (!queue.isEmpty()) {
+            String current = queue.poll();
+            List<ExamCategory> children = examCategoryMapper.selectListByQuery(
+                    QueryWrapper.create().where(EXAM_CATEGORY.PARENT_ID.eq(current)));
+            for (ExamCategory child : children) {
+                if (descendants.add(child.getCategoryId())) {
+                    queue.add(child.getCategoryId());
+                }
+            }
+        }
+        return descendants;
+    }
+
+    private void updateDescendantLevels(String parentId, int parentLevel) {
+        List<ExamCategory> children = examCategoryMapper.selectListByQuery(
+                QueryWrapper.create().where(EXAM_CATEGORY.PARENT_ID.eq(parentId)));
+        int childLevel = parentLevel + 1;
+        for (ExamCategory child : children) {
+            if (child.getLevel() == null || child.getLevel() != childLevel) {
+                UpdateChain.of(ExamCategory.class)
+                        .set(EXAM_CATEGORY.LEVEL, childLevel)
+                        .where(EXAM_CATEGORY.CATEGORY_ID.eq(child.getCategoryId()))
+                        .update();
+            }
+            updateDescendantLevels(child.getCategoryId(), childLevel);
+        }
     }
 
     public List<ExamCategoryVo> getCategoriesTree() {
@@ -895,10 +981,14 @@ public class AdminService {
 
         // 对当前层级进行排序
         categories.sort((a, b) -> {
-            if (a.getSortOrder() != null && b.getSortOrder() != null) {
-                return a.getSortOrder().compareTo(b.getSortOrder());
+            int sortA = a.getSortOrder() != null ? a.getSortOrder() : 0;
+            int sortB = b.getSortOrder() != null ? b.getSortOrder() : 0;
+            if (sortA != sortB) {
+                return Integer.compare(sortA, sortB);
             }
-            return a.getCategoryName().compareTo(b.getCategoryName());
+            String nameA = a.getCategoryName() != null ? a.getCategoryName() : "";
+            String nameB = b.getCategoryName() != null ? b.getCategoryName() : "";
+            return nameA.compareTo(nameB);
         });
 
         // 递归对子分类进行排序
@@ -929,7 +1019,7 @@ public class AdminService {
         List<ExamCategoryVo> rootCategories = new ArrayList<>();
 
         // 一次性查询所有分类的题目数量，避免 N+1 查询问题
-        String sql = "SELECT category_id, COUNT(*) as question_count FROM exam_question WHERE status = '1' GROUP BY category_id";
+        String sql = "SELECT category_id, COUNT(*) as question_count FROM exam_question WHERE status = '1' AND is_delete = 0 GROUP BY category_id";
         List<Row> questionCounts = Db.selectListBySql(sql);
         Map<String, Long> questionCountMap = new HashMap<>();
         for (Row row : questionCounts) {
@@ -1009,7 +1099,7 @@ public class AdminService {
         List<CategoryCount> rootCategories = new ArrayList<>();
 
         // 一次性查询所有分类的题目数量，避免 N+1 查询问题
-        String sql = "SELECT category_id, COUNT(*) as question_count FROM exam_question WHERE status = '1' GROUP BY category_id";
+        String sql = "SELECT category_id, COUNT(*) as question_count FROM exam_question WHERE status = '1' AND is_delete = 0 GROUP BY category_id";
         List<Row> questionCounts = Db.selectListBySql(sql);
         Map<String, Long> questionCountMap = new HashMap<>();
         for (Row row : questionCounts) {
@@ -1086,10 +1176,14 @@ public class AdminService {
 
         // 对当前层级进行排序
         categories.sort((a, b) -> {
-            if (a.getSortOrder() != null && b.getSortOrder() != null) {
-                return a.getSortOrder().compareTo(b.getSortOrder());
+            int sortA = a.getSortOrder() != null ? a.getSortOrder() : 0;
+            int sortB = b.getSortOrder() != null ? b.getSortOrder() : 0;
+            if (sortA != sortB) {
+                return Integer.compare(sortA, sortB);
             }
-            return a.getCategoryName().compareTo(b.getCategoryName());
+            String nameA = a.getCategoryName() != null ? a.getCategoryName() : "";
+            String nameB = b.getCategoryName() != null ? b.getCategoryName() : "";
+            return nameA.compareTo(nameB);
         });
 
         // 递归对子分类进行排序
@@ -1117,7 +1211,9 @@ public class AdminService {
     // 考试配置管理
     public Page<ExamConfig> getExamConfigs(ExamConfigDTO request) {
         return examConfigMapper.paginate(request.getPageNumber(), request.getPageSize(), QueryWrapper.create()
-                .where(EXAM_CONFIG.STATUS.eq("1")).orderBy(EXAM_CONFIG.CREATE_TIME.desc()));
+                .where(EXAM_CONFIG.STATUS.eq("1"))
+                .and(EXAM_CONFIG.CONFIG_NAME.like(request.getConfigName()))
+                .orderBy(EXAM_CONFIG.CREATE_TIME.desc()));
     }
 
     public void addExamConfig(ExamConfigDTO request) {
@@ -1138,15 +1234,12 @@ public class AdminService {
     }
 
     public void deleteExamConfig(String id) {
-        // 检查该配置下是否有试卷
-        List<ExamPaper> papers = examPaperMapper.selectListByQuery(
-                QueryWrapper.create()
-                        .where(EXAM_PAPER.CONFIG_ID.eq(id))
-                        .and(EXAM_PAPER.STATUS.eq("1")) // 只检查启用状态的试卷
-        );
+        // 检查该配置下是否有试卷（含停用的试卷，停用后可能再次启用）
+        long paperCount = examPaperMapper.selectCountByQuery(
+                QueryWrapper.create().where(EXAM_PAPER.CONFIG_ID.eq(id)));
 
-        if (!papers.isEmpty()) {
-            throw new RuntimeException("该考试配置下存在试卷，无法删除。请先删除相关试卷后再删除配置。");
+        if (paperCount > 0) {
+            throw new RuntimeException("该考试配置下存在 " + paperCount + " 张试卷（含停用的），无法删除。请先删除相关试卷后再删除配置。");
         }
 
         examConfigMapper.deleteById(id);
@@ -1202,7 +1295,9 @@ public class AdminService {
                         EXAM_PAPER.UPDATE_BY,
                         EXAM_PAPER.UPDATE_TIME,
                         EXAM_PAPER.REMARK,
-                        EXAM_CONFIG.USER_CATEGORY.as("userCategories"))
+                        EXAM_CONFIG.USER_CATEGORY.as("userCategories"),
+                        EXAM_CONFIG.CONFIG_NAME,
+                        EXAM_CONFIG.IS_DELETE.as("configDeleted"))
                 .from(EXAM_PAPER)
                 .leftJoin(EXAM_CATEGORY).on(EXAM_PAPER.CATEGORY_ID.eq(EXAM_CATEGORY.CATEGORY_ID))
                 .leftJoin(EXAM_CONFIG).on(EXAM_PAPER.CONFIG_ID.eq(EXAM_CONFIG.CONFIG_ID));
@@ -1225,11 +1320,12 @@ public class AdminService {
         // 按创建时间倒序排列
         queryWrapper.orderBy(EXAM_PAPER.CREATE_TIME.desc());
 
-        return examPaperMapper.paginateAs(
+        // 关联的配置、分类即使已被逻辑删除，也要显示试卷真实的人员类别和分类名称，并标记配置已删除
+        return LogicDeleteManager.execWithoutLogicDelete(() -> examPaperMapper.paginateAs(
                 examPaperQueryDTO.getPageNumber(),
                 examPaperQueryDTO.getPageSize(),
                 queryWrapper,
-                ExamPaperVo.class);
+                ExamPaperVo.class));
     }
 
     public List<ExamQuestion> getGeneratedPaperDetail(String paperId) {
@@ -1569,16 +1665,14 @@ public class AdminService {
         }
 
         // 2. 获取试卷对应的人员类别
-        ExamConfig config = examConfigMapper.selectOneByQuery(
-                QueryWrapper.create()
-                        .where(EXAM_CONFIG.CONFIG_ID.eq(paper.getConfigId())));
+        ExamConfig config = examConfigMapper.selectByPaperId(paperId);
 
         if (config == null) {
             throw new RuntimeException("考试配置不存在");
         }
 
         // 3. 统计该人员类别下的总用户数（支持多选）
-        String[] allowedCategories = config.getUserCategory().split(",");
+        String[] allowedCategories = splitUserCategories(config.getUserCategory());
         Long totalUsers = sysUserMapper.selectCountByQuery(
                 QueryWrapper.create()
                         .where(SYS_USER.USER_CATEGORY.in(allowedCategories))
@@ -1592,7 +1686,7 @@ public class AdminService {
                         .from(EXAM_RECORD)
                         .leftJoin(SYS_USER).on(EXAM_RECORD.USER_ID.eq(SYS_USER.USER_ID))
                         .where(EXAM_RECORD.PAPER_ID.eq(paperId))
-                        .and(SYS_USER.USER_CATEGORY.eq(config.getUserCategory()))
+                        .and(SYS_USER.USER_CATEGORY.in((Object[]) allowedCategories))
                         .and(EXAM_RECORD.STATUS.eq("completed"))
                         .groupBy(EXAM_RECORD.USER_ID));
         Long examedUsers = (long) examedUserIds.size();
@@ -1614,14 +1708,23 @@ public class AdminService {
                 .build();
     }
 
+    /** 配置的人员类别是逗号分隔的多选值；为空时直接报错，否则 in() 条件会被忽略而统计全部考生 */
+    private String[] splitUserCategories(String userCategory) {
+        String[] categories = userCategory == null ? new String[0]
+                : java.util.Arrays.stream(userCategory.split(","))
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .toArray(String[]::new);
+        if (categories.length == 0) {
+            throw new CustomException("该试卷的考试配置未设置人员类别");
+        }
+        return categories;
+    }
+
     // 获取试卷考试详细情况
     public List<PaperExamDetailVo> getPaperExamDetail(String paperId) {
         // 1. 获取试卷对应的人员类别
-        ExamConfig config = examConfigMapper.selectOneByQuery(
-                QueryWrapper.create()
-                        .from(EXAM_CONFIG)
-                        .leftJoin(EXAM_PAPER).on(EXAM_CONFIG.CONFIG_ID.eq(EXAM_PAPER.CONFIG_ID))
-                        .where(EXAM_PAPER.PAPER_ID.eq(paperId)));
+        ExamConfig config = examConfigMapper.selectByPaperId(paperId);
 
         if (config == null) {
             throw new RuntimeException("考试配置不存在");
@@ -1630,7 +1733,7 @@ public class AdminService {
         // 2. 获取该人员类别下的所有用户（支持多选）
         List<SysUser> allUsers = sysUserMapper.selectListByQuery(
                 QueryWrapper.create()
-                        .where(SYS_USER.USER_CATEGORY.in(config.getUserCategory().split(",")))
+                        .where(SYS_USER.USER_CATEGORY.in((Object[]) splitUserCategories(config.getUserCategory())))
                         .and(SYS_USER.STATUS.eq("1"))
                         .and(SYS_USER.ROLE.eq("student")));
 
@@ -1765,6 +1868,9 @@ public class AdminService {
             queryWrapper.and(EXAM_RECORD.EXAM_NAME.like(request.getExamName()));
         }
 
+        // 添加考试时间范围筛选（按结束时间）
+        applyExamTimeFilter(queryWrapper, request);
+
         // 查询所有数据（不分页）
         List<ExamResultVo> results = examRecordMapper.selectListByQueryAs(
                 queryWrapper.orderBy(EXAM_RECORD.END_TIME.desc()),
@@ -1830,6 +1936,9 @@ public class AdminService {
             if (request.getExamName() != null && !request.getExamName().trim().isEmpty()) {
                 queryWrapper.and(EXAM_RECORD.EXAM_NAME.like(request.getExamName()));
             }
+
+            // 添加考试时间范围筛选（按结束时间）
+            applyExamTimeFilter(queryWrapper, request);
 
             // 处理删除状态筛选
             if (Boolean.TRUE.equals(request.getOnlyDeleted())) {
@@ -1902,6 +2011,16 @@ public class AdminService {
             if (request.getExamName() != null && !request.getExamName().trim().isEmpty()) {
                 whereClause.append(" AND er.exam_name LIKE ?");
                 params.add("%" + request.getExamName() + "%");
+            }
+
+            // 添加考试时间范围筛选（按结束时间）
+            if (request.getStartTime() != null && !request.getStartTime().trim().isEmpty()) {
+                whereClause.append(" AND er.end_time >= ?");
+                params.add(request.getStartTime().trim() + " 00:00:00");
+            }
+            if (request.getEndTime() != null && !request.getEndTime().trim().isEmpty()) {
+                whereClause.append(" AND er.end_time <= ?");
+                params.add(request.getEndTime().trim() + " 23:59:59");
             }
 
             // 处理逻辑删除过滤
@@ -2097,6 +2216,142 @@ public class AdminService {
                 }
             }
         }
+    }
+
+    /**
+     * 导出所有题目到Excel，按"题目导入模版（新）"格式：
+     * sheet1 选择题/多选题：题目所属分类、题干、选项A-F、正确答案
+     * sheet2 判断题：题目所属分类、题干、正确答案
+     */
+    public void exportQuestions(HttpServletResponse response) {
+        ExcelWriter writer = null;
+        try {
+            // 只导出启用的题目
+            List<ExamQuestion> questions = examQuestionMapper.selectListByQuery(
+                    QueryWrapper.create().where(EXAM_QUESTION.STATUS.eq("1"))
+                            .orderBy(EXAM_QUESTION.CATEGORY_ID.asc(), EXAM_QUESTION.QUESTION_ID.asc()));
+            List<ExamCategory> categories = examCategoryMapper.selectListByQuery(QueryWrapper.create());
+            Map<String, String> categoryNameMap = categories.stream()
+                    .collect(Collectors.toMap(ExamCategory::getCategoryId, ExamCategory::getCategoryName, (a, b) -> a));
+
+            // 分离选择题/多选题与判断题
+            List<Map<String, Object>> choiceRows = new ArrayList<>();
+            List<Map<String, Object>> judgmentRows = new ArrayList<>();
+            for (ExamQuestion q : questions) {
+                String categoryName = categoryNameMap.getOrDefault(q.getCategoryId(), "");
+                if ("judgment".equals(q.getQuestionType())) {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("题目所属分类", categoryName);
+                    row.put("题干", q.getQuestionContent());
+                    row.put("正确答案", q.getCorrectAnswer() != null ? q.getCorrectAnswer() : "");
+                    judgmentRows.add(row);
+                } else {
+                    // choice / multi
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("题目所属分类", categoryName);
+                    row.put("题干", q.getQuestionContent());
+                    String[] options = new String[0];
+                    if (q.getQuestionOptions() != null && !q.getQuestionOptions().trim().isEmpty()) {
+                        try {
+                            options = new com.fasterxml.jackson.databind.ObjectMapper()
+                                    .readValue(q.getQuestionOptions(), String[].class);
+                        } catch (Exception e) {
+                            options = new String[0];
+                        }
+                    }
+                    // 选项A-F（最多6列）
+                    for (int i = 0; i < 6; i++) {
+                        row.put("选项" + (char) ('A' + i), i < options.length && options[i] != null ? options[i] : "");
+                    }
+                    // 正确答案：索引格式 "0" / "0,3,1" 转回字母格式 "A" / "ADAC"
+                    String letters = "";
+                    if (q.getCorrectAnswer() != null && !q.getCorrectAnswer().trim().isEmpty()) {
+                        StringBuilder sb = new StringBuilder();
+                        for (String part : q.getCorrectAnswer().split(",")) {
+                            try {
+                                int idx = Integer.parseInt(part.trim());
+                                if (idx >= 0 && idx < 26) {
+                                    sb.append((char) ('A' + idx));
+                                }
+                            } catch (NumberFormatException ignored) {
+                            }
+                        }
+                        letters = sb.toString();
+                    }
+                    row.put("正确答案", letters);
+                    choiceRows.add(row);
+                }
+            }
+
+            // 生成带时间戳的文件名
+            String timestamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(new java.util.Date());
+            String filename = "questions_" + timestamp + ".xlsx";
+            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8");
+            response.setCharacterEncoding("UTF-8");
+            String encodedFilename = java.net.URLEncoder.encode(filename, "UTF-8");
+            response.setHeader("Content-Disposition", "attachment;filename*=UTF-8''" + encodedFilename);
+
+            writer = ExcelUtil.getWriter(true);
+            // 表头必须单独写：writeRow(List, true) 不会为纯值列表生成表头
+            writer.renameSheet(0, "选择题");
+            writer.writeHeadRow(java.util.Arrays.asList("题目所属分类", "题干", "选项A", "选项B", "选项C", "选项D", "选项E", "选项F", "正确答案"));
+            for (Map<String, Object> row : choiceRows) {
+                writer.writeRow(new ArrayList<>(row.values()));
+            }
+            writer.setSheet("判断题");
+            writer.writeHeadRow(java.util.Arrays.asList("题目所属分类", "题干", "正确答案"));
+            for (Map<String, Object> row : judgmentRows) {
+                writer.writeRow(new ArrayList<>(row.values()));
+            }
+
+            writer.autoSizeColumnAll();
+            writer.flush(response.getOutputStream());
+            log.info("题目导出成功，选择题{}条，判断题{}条", choiceRows.size(), judgmentRows.size());
+
+        } catch (Exception e) {
+            log.error("导出题目失败", e);
+            throw new CustomException("导出题目失败: " + e.getMessage());
+        } finally {
+            if (writer != null) {
+                try {
+                    writer.close();
+                } catch (Exception e) {
+                    log.error("关闭ExcelWriter失败", e);
+                }
+            }
+        }
+    }
+
+    /**
+     * 删除题目分类（逻辑删除）
+     * 校验：分类下有题目则拒绝删除；有子分类则拒绝删除
+     */
+    public void deleteCategory(String categoryId) {
+        CustomToken customToken = JwtAccessContext.getLoginInfo();
+        // 检查分类是否存在
+        ExamCategory category = examCategoryMapper.selectOneByQuery(
+                QueryWrapper.create().where(EXAM_CATEGORY.CATEGORY_ID.eq(categoryId)));
+        if (category == null) {
+            throw new CustomException("题目分类不存在");
+        }
+
+        // 检查是否有子分类
+        long childCount = examCategoryMapper.selectCountByQuery(
+                QueryWrapper.create().where(EXAM_CATEGORY.PARENT_ID.eq(categoryId)));
+        if (childCount > 0) {
+            throw new CustomException("该分类下存在子分类，请先删除子分类");
+        }
+
+        // 检查分类下是否有题目
+        long questionCount = examQuestionMapper.selectCountByQuery(
+                QueryWrapper.create().where(EXAM_QUESTION.CATEGORY_ID.eq(categoryId)));
+        if (questionCount > 0) {
+            throw new CustomException("该分类下存在 " + questionCount + " 道题目，请先删除或转移题目");
+        }
+
+        // 逻辑删除（status置0 + 逻辑删除字段）
+        examCategoryMapper.deleteById(categoryId);
+        log.info("题目分类删除成功，categoryId: {}, operator: {}", categoryId, customToken.getUserName());
     }
 
 }

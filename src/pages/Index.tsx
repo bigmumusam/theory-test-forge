@@ -108,7 +108,7 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {(user.role === 'admin' || user.role === 'exam_admin') ? (
+      {user.role === 'admin' ? (
         <AdminDashboard user={user} onLogout={handleLogout} />
       ) : (
         <StudentDashboard user={user} onLogout={handleLogout} />

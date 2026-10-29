@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
+import SmartPagination from '@/components/ui/smart-pagination';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
@@ -125,6 +125,8 @@ const ExamRecords: React.FC = () => {
         return <Badge variant="default" className="bg-green-100 text-green-800">已完成</Badge>;
       case 'in-progress':
         return <Badge variant="default" className="bg-blue-100 text-blue-800">进行中</Badge>;
+      case 'timeout':
+        return <Badge variant="default" className="bg-orange-100 text-orange-800">超时</Badge>;
       case 'pending':
         return <Badge variant="secondary">待开始</Badge>;
       default:
@@ -258,34 +260,13 @@ const ExamRecords: React.FC = () => {
               {/* 分页 */}
               {totalPages > 1 && (
                 <div className="mt-6">
-                  <Pagination>
-                    <PaginationContent>
-                      <PaginationItem>
-                        <PaginationPrevious 
-                          onClick={() => handlePageChange(currentPage - 1)}
-                          className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                        />
-                      </PaginationItem>
-                      
-                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                        <PaginationItem key={page}>
-                          <PaginationLink
-                            onClick={() => handlePageChange(page)}
-                            className={currentPage === page ? 'bg-blue-600 text-white' : 'cursor-pointer'}
-                          >
-                            {page}
-                          </PaginationLink>
-                        </PaginationItem>
-                      ))}
-                      
-                      <PaginationItem>
-                        <PaginationNext 
-                          onClick={() => handlePageChange(currentPage + 1)}
-                          className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                        />
-                      </PaginationItem>
-                    </PaginationContent>
-                  </Pagination>
+                  <SmartPagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={handlePageChange}
+                    prevText="上一页"
+                    nextText="下一页"
+                  />
                 </div>
               )}
             </>

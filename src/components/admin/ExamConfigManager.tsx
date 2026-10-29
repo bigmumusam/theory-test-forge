@@ -12,7 +12,8 @@ import { request } from '@/lib/request';
 import ExamPaperGenerator from './ExamPaperGenerator';
 import ExamPaperList from './ExamPaperList';
 import { useOptions } from '../../context/OptionsContext';
-import { ChevronLeft, ChevronRight, Loader2, ChevronDown } from 'lucide-react';
+import { Loader2, ChevronDown } from 'lucide-react';
+import SmartPagination from '@/components/ui/smart-pagination';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 // 人员类别选项
@@ -205,18 +206,32 @@ const ExamConfigManager: React.FC = () => {
 
   const [configPage, setConfigPage] = useState(1);
   const configsPerPage = 6;
-  const totalConfigPages = Math.max(1, Math.ceil(examConfigs.length / configsPerPage));
+  const [totalConfigPages, setTotalConfigPages] = useState(1);
+  const [totalConfigRows, setTotalConfigRows] = useState(0);
+  const [configKeyword, setConfigKeyword] = useState('');
+  // 已提交的名称搜索条件（点击"查询"后才更新）
+  const [appliedConfigKeyword, setAppliedConfigKeyword] = useState('');
 
   const [globalLoading, setGlobalLoading] = useState(false);
 
-  // 真实API调用 - 获取考试配置列表
+  // 真实API调用 - 获取考试配置列表（服务端分页）
   const fetchExamConfigs = async () => {
     setLoading(true);
     try {
       const res = await request('/admin/exam-configs', {
         method: 'POST',
-        body: JSON.stringify({ pageNumber: 1, pageSize: 100 })
+        body: JSON.stringify({ pageNumber: configPage, pageSize: configsPerPage, configName: appliedConfigKeyword || undefined })
       });
+      const pageData = res.data && !Array.isArray(res.data) ? res.data : null;
+      if (pageData) {
+        // 删除后当前页没有数据时回退一页
+        if ((pageData.records || []).length === 0 && configPage > 1) {
+          setConfigPage(configPage - 1);
+          return;
+        }
+        setTotalConfigPages(Math.max(1, pageData.totalPage || 1));
+        setTotalConfigRows(pageData.totalRow || 0);
+      }
       let list: any[] = [];
       if (Array.isArray(res)) {
         list = res;
@@ -256,7 +271,19 @@ const ExamConfigManager: React.FC = () => {
 
   useEffect(() => {
     fetchExamConfigs();
-  }, []);
+    // eslint-disable-next-line
+  }, [configPage, appliedConfigKeyword]);
+
+  const handleConfigSearch = () => {
+    setConfigPage(1);
+    setAppliedConfigKeyword(configKeyword.trim());
+  };
+
+  const handleConfigClearSearch = () => {
+    setConfigKeyword('');
+    setConfigPage(1);
+    setAppliedConfigKeyword('');
+  };
 
   const calculateTotalScore = (config: Partial<ExamConfig>) => {
     if (!config.questionTypes) return 0;
@@ -774,23 +801,32 @@ const ExamConfigManager: React.FC = () => {
               </div>
 
             {/* 现有配置列表 */}
-            <div className="lg:col-span-4 flex flex-col h-full">
-              <div className="flex-1 flex items-stretch">
-                {/* 左翻页箭头 */}
-                <div className="flex items-center pr-2">
-                  <Button variant="ghost" size="icon" onClick={() => setConfigPage(p => Math.max(1, p - 1))} disabled={configPage === 1 || globalLoading}>
-                    <ChevronLeft className="w-6 h-6" />
-                  </Button>
-                </div>
-                {/* 卡片区 */}
-                <div className="flex-1">
+            <div className="lg:col-span-4 flex flex-col h-full gap-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  className="w-64"
+                  placeholder="搜索考试配置名称"
+                  value={configKeyword}
+                  onChange={e => setConfigKeyword(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleConfigSearch()}
+                />
+                <Button onClick={handleConfigSearch} disabled={globalLoading}>查询</Button>
+                {appliedConfigKeyword && (
+                  <Button variant="outline" onClick={handleConfigClearSearch}>清除筛选</Button>
+                )}
+              </div>
+              <div className="flex-1">
               {loading ? (
                     <div className="flex justify-center items-center py-8 h-full">
                   <span>加载中...</span>
                 </div>
+              ) : examConfigs.length === 0 ? (
+                    <div className="flex justify-center items-center py-16 text-gray-500">
+                      {appliedConfigKeyword ? '没有找到匹配的考试配置' : '暂无考试配置'}
+                    </div>
               ) : (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2 h-full text-sm">
-                      {examConfigs.slice((configPage-1)*6, configPage*6).map(config => (
+                      {examConfigs.map(config => (
                         <Card key={config.id} className="p-6 flex flex-col justify-between min-h-[220px]">
                           <div className="flex justify-between items-start mb-3">
                       <h4 className="text-lg font-medium text-gray-800">{config.name}</h4>
@@ -858,19 +894,24 @@ const ExamConfigManager: React.FC = () => {
                         </Card>
                       ))}
                       {/* 补足空白占位，保证2行3列布局整齐 */}
-                      {Array.from({ length: 6 - (examConfigs.slice((configPage-1)*6, configPage*6).length) }).map((_, i) => (
+                      {Array.from({ length: Math.max(0, configsPerPage - examConfigs.length) }).map((_, i) => (
                         <div key={i} className="invisible" />
                       ))}
                     </div>
                   )}
-                </div>
-                {/* 右翻页箭头 */}
-                <div className="flex items-center pl-2">
-                  <Button variant="ghost" size="icon" onClick={() => setConfigPage(p => Math.min(totalConfigPages, p + 1))} disabled={configPage === totalConfigPages || globalLoading}>
-                    <ChevronRight className="w-6 h-6" />
-                  </Button>
-                </div>
               </div>
+              {totalConfigRows > 0 && (
+                <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2">
+                  <p className="text-sm text-gray-600 whitespace-nowrap">
+                    显示 {(configPage - 1) * configsPerPage + 1} 到 {Math.min(configPage * configsPerPage, totalConfigRows)} 条，共 {totalConfigRows} 条记录
+                  </p>
+                  <SmartPagination
+                    currentPage={configPage}
+                    totalPages={totalConfigPages}
+                    onPageChange={setConfigPage}
+                  />
+                </div>
+              )}
             </div>
           </div>
         </TabsContent>

@@ -14,8 +14,11 @@ interface StudentDashboardProps {
 
 const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onLogout }) => {
   const [currentExam, setCurrentExam] = useState<ExamPaper | null>(null);
+  // 服务端返回的剩余秒数（刷新/继续考试场景），传给 ExamSession 初始化倒计时
+  const [remainingSeconds, setRemainingSeconds] = useState<number | undefined>(undefined);
 
-  const handleStartExam = (exam: ExamPaper) => {
+  const handleStartExam = (exam: ExamPaper, serverRemaining?: number) => {
+    setRemainingSeconds(serverRemaining);
     setCurrentExam({
       ...exam,
       status: 'in-progress',
@@ -25,14 +28,16 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onLogout }) =
 
   const handleExamComplete = () => {
     setCurrentExam(null);
+    setRemainingSeconds(undefined);
   };
 
   if (currentExam) {
     return (
-      <ExamSession 
-        exam={currentExam} 
+      <ExamSession
+        exam={currentExam}
         user={user}
         onComplete={handleExamComplete}
+        remainingSeconds={remainingSeconds}
       />
     );
   }

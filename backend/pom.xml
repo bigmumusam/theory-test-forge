@@ -144,7 +144,7 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
-<!--                <version>${spring-boot.version}</version>  &lt;!&ndash; 使用与Spring Boot相同的版本 &ndash;&gt;-->
+                <version>${spring-boot.version}</version>
                 <executions>
                     <execution>
                         <goals>

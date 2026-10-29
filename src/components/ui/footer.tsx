@@ -1,4 +1,5 @@
 import React from 'react';
+import footerImage from '@/assets/images/footer.png';
 
 const Footer: React.FC = () => {
   return (
@@ -6,7 +7,7 @@ const Footer: React.FC = () => {
       <div className="container mx-auto px-4">
         <div className="flex flex-col items-center space-y-4">
           <img
-            src="/image/footer.png"
+            src={footerImage}
             alt="页脚装饰"
             className="max-w-full h-auto max-h-20 object-contain"
             style={{ transform: 'translateX(2em)' }}
